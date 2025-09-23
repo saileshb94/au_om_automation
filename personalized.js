@@ -1,0 +1,538 @@
+// SIMPLE FIX: Create a separate query for personalized script that doesn't include the date filter
+
+const query = `
+SELECT 
+    so.id, 
+    so.order_number, 
+    so.process_status, 
+    sfl.location_name, 
+    sode.delivery_date, 
+    sp.title, 
+    sp.tags, 
+    sop.properties,
+    (SELECT GROUP_CONCAT(DISTINCT sp2.title ORDER BY sp2.title SEPARATOR ', ') FROM shopify_order_products sop2 LEFT JOIN shopify_products sp2 ON sp2.variant_id = sop2.variant_id WHERE sop2.order_id = so.id) as order_products
+FROM flowerchimp.shopify_orders so
+LEFT JOIN 
+    shopify_order_shipping sos ON sos.order_id = so.id
+LEFT JOIN 
+    shopify_order_additional_details sode ON so.id = sode.order_id
+LEFT JOIN 
+    shopify_fulfillment_locations sfl ON so.fulfillment_location_id = sfl.id
+LEFT JOIN 
+    shopify_order_products sop ON so.id = sop.order_id
+LEFT JOIN 
+    shopify_products sp ON sp.variant_id = sop.variant_id
+WHERE so.shop_id=10 
+    AND so.process_status IS NULL  
+    AND (sp.tags LIKE '%product:personalisedjar%' OR sp.tags LIKE '%product:personalisedcandle%' OR sp.tags LIKE '%product:personalisedplant%' OR sp.tags LIKE '%product:personalisedbottle%' OR sp.tags LIKE '%product:imageupload%')
+ORDER BY sfl.location_name, so.created_at desc;
+`;
+
+// Transform function - updated to return both data and processed order numbers
+function transform(rawData) {
+    console.log('Transform called with rawData length:', rawData ? rawData.length : 'null/undefined');
+    
+    if (!rawData || rawData.length === 0) {
+        console.log('No raw data provided');
+        return {
+            transformedData: [],
+            processedOrderNumbers: []
+        };
+    }
+    
+    // Fixed location order: Sydney, Melbourne, Perth, Adelaide, Brisbane
+    const validLocations = ["Sydney", "Melbourne", "Perth", "Adelaide", "Brisbane"];
+    
+    // Separate data by product type
+    const jarData = rawData.filter(row => row.tags && row.tags.includes('product:personalisedjar'));
+    const candlesPlantData = rawData.filter(row => row.tags && (row.tags.includes('product:personalisedcandle') || row.tags.includes('product:personalisedplant')));
+    const proseccoData = rawData.filter(row => row.tags && row.tags.includes('product:personalisedbottle'));
+    const polaroidData = rawData.filter(row => row.tags && row.tags.includes('product:imageupload')); // NEW
+    
+    console.log('Filtered data counts - Jars:', jarData.length, 'Candles/Plants:', candlesPlantData.length, 'Proseccos:', proseccoData.length, 'Polaroids:', polaroidData.length);
+    
+    // Process all product types
+    const jarsResult = processJarsData(jarData, validLocations);
+    const candlesPlantsResult = processCandlesPlantsData(candlesPlantData, validLocations);
+    const proseccosResult = processProseccosData(proseccoData, validLocations);
+    const polaroidResult = processPolaroidData(polaroidData, validLocations); // NEW
+    
+    console.log('Processing results - Jars:', Object.keys(jarsResult.data).length, 'Candles/Plants:', Object.keys(candlesPlantsResult.data).length, 'Proseccos:', Object.keys(proseccosResult.data).length, 'Polaroids:', Object.keys(polaroidResult.data).length, 'locations');
+    
+    // Combine all product types into a single personalized result
+    const transformedData = combinePersonalizedData(
+        jarsResult.data, 
+        candlesPlantsResult.data, 
+        proseccosResult.data, 
+        polaroidResult.data, // NEW
+        validLocations
+    );
+    
+    // Combine all processed order numbers from all product types
+    const processedOrderNumbers = [
+        ...jarsResult.orderNumbers,
+        ...candlesPlantsResult.orderNumbers,
+        ...proseccosResult.orderNumbers,
+        ...polaroidResult.orderNumbers // NEW
+    ];
+    
+    // Remove duplicates and filter out any null/undefined values
+    const uniqueProcessedOrderNumbers = [...new Set(processedOrderNumbers.filter(orderNum => orderNum))];
+    
+    console.log('Final combined result length:', transformedData.length);
+    console.log('Actually processed order numbers:', uniqueProcessedOrderNumbers.length);
+    
+    return {
+        transformedData,
+        processedOrderNumbers: uniqueProcessedOrderNumbers
+    };
+}
+
+function extractJarMessage(properties) {
+    try {
+        const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
+        
+        if (!Array.isArray(propertiesArray)) {
+            return null;
+        }
+        
+        // First look for 'Jar_Message'
+        for (const prop of propertiesArray) {
+            if (prop.name === 'Jar_Message' && prop.value) {
+                return prop.value;
+            }
+        }
+        
+        // Fallback to 'message'
+        for (const prop of propertiesArray) {
+            if (prop.name === 'message' && prop.value) {
+                return prop.value;
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error extracting jar message:', error);
+        return null;
+    }
+}
+
+function extractCandlesPlantMessage(properties) {
+    try {
+        const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
+        
+        if (!Array.isArray(propertiesArray)) {
+            return null;
+        }
+        
+        // Look for 'message' only
+        for (const prop of propertiesArray) {
+            if (prop.name === 'message' && prop.value) {
+                return prop.value;
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error extracting candles/plant message:', error);
+        return null;
+    }
+}
+
+function extractProseccoMessage(properties) {
+    try {
+        const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
+        
+        if (!Array.isArray(propertiesArray)) {
+            return null;
+        }
+        
+        // Look for 'message' only
+        for (const prop of propertiesArray) {
+            if (prop.name === 'message' && prop.value) {
+                return prop.value;
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error extracting prosecco message:', error);
+        return null;
+    }
+}
+
+function processJarsData(rawData, validLocations) {
+    console.log('Processing jars data - input length:', rawData.length);
+    
+    const locationGroups = {};
+    const processedOrderNumbers = [];
+    
+    // Initialize all locations with empty arrays for both luxe and classic/large
+    validLocations.forEach(location => {
+        locationGroups[location] = {
+            luxe: [],
+            classic_large: []
+        };
+    });
+    
+    // Group messages by location and type (luxe vs classic/large)
+    rawData.forEach((row, index) => {
+        const messageValue = extractJarMessage(row.properties);
+        
+        if (messageValue && messageValue.trim() !== '' && row.location_name) {
+            const locationName = row.location_name;
+            
+            // Only process valid locations
+            if (validLocations.includes(locationName)) {
+                // Clean up the message value
+                const cleanMessage = messageValue.replace(/\s+/g, ' ').trim();
+                
+                // Check if order_products contains "Luxe" or "luxe"
+                const isLuxe = row.order_products && (row.order_products.includes('Luxe') || row.order_products.includes('luxe'));
+                
+                if (isLuxe) {
+                    locationGroups[locationName].luxe.push(cleanMessage);
+                } else {
+                    locationGroups[locationName].classic_large.push(cleanMessage);
+                }
+                
+                // Add this order number to processed list since we used its message
+                if (row.order_number) {
+                    processedOrderNumbers.push(row.order_number);
+                }
+                
+                if (index < 3) {
+                    // console.log(`Sample jar ${index}: location=${locationName}, isLuxe=${isLuxe}, message="${cleanMessage.substring(0, 50)}..."`);
+                }
+            }
+        }
+    });
+    
+    // Transform to final structure with batching
+    const result = {};
+    
+    validLocations.forEach(locationName => {
+        const luxeMessages = locationGroups[locationName].luxe || [];
+        const classicLargeMessages = locationGroups[locationName].classic_large || [];
+        
+        // console.log(`${locationName}: ${luxeMessages.length} luxe, ${classicLargeMessages.length} classic/large`);
+        
+        const locationData = {};
+        
+        // Process luxe messages
+        if (luxeMessages.length > 0) {
+            const luxeBatches = [];
+            
+            for (let i = 0; i < luxeMessages.length; i += 2) {
+                const batchMessages = luxeMessages.slice(i, i + 2);
+                const batch = {};
+                
+                batchMessages.forEach((message, index) => {
+                    batch[`jar_message${index + 1}`] = message;
+                });
+                
+                luxeBatches.push(batch);
+            }
+            
+            locationData.jars_luxe_data = luxeBatches;
+        }
+        
+        // Process classic/large messages
+        if (classicLargeMessages.length > 0) {
+            const classicLargeBatches = [];
+            
+            for (let i = 0; i < classicLargeMessages.length; i += 2) {
+                const batchMessages = classicLargeMessages.slice(i, i + 2);
+                const batch = {};
+                
+                batchMessages.forEach((message, index) => {
+                    batch[`jar_message${index + 1}`] = message;
+                });
+                
+                classicLargeBatches.push(batch);
+            }
+            
+            locationData.jars_classic_large_data = classicLargeBatches;
+        }
+        
+        // Only add to result if there's data
+        if (Object.keys(locationData).length > 0) {
+            result[locationName] = locationData;
+        }
+    });
+    
+    return {
+        data: result,
+        orderNumbers: processedOrderNumbers
+    };
+}
+
+function processCandlesPlantsData(rawData, validLocations) {
+    const locationGroups = {};
+    const processedOrderNumbers = [];
+    
+    validLocations.forEach(location => {
+        locationGroups[location] = [];
+    });
+    
+    rawData.forEach(order => {
+        const messageValue = extractCandlesPlantMessage(order.properties);
+        
+        if (messageValue && order.location_name) {
+            const locationName = order.location_name;
+            
+            if (validLocations.includes(locationName)) {
+                let cleanMessage;
+                try {
+                    const parsedMessage = JSON.parse(messageValue);
+                    cleanMessage = parsedMessage.replace(/\s+/g, ' ').trim();
+                } catch (error) {
+                    cleanMessage = messageValue.replace(/\s+/g, ' ').trim();
+                }
+                
+                locationGroups[locationName].push(cleanMessage);
+                
+                // Add this order number to processed list since we used its message
+                if (order.order_number) {
+                    processedOrderNumbers.push(order.order_number);
+                }
+            }
+        }
+    });
+    
+    const result = {};
+    
+    validLocations.forEach(locationName => {
+        const messages = locationGroups[locationName] || [];
+        
+        if (messages.length > 0) {
+            const batches = [];
+            
+            for (let i = 0; i < messages.length; i += 12) {
+                const batchMessages = messages.slice(i, i + 12);
+                const batch = {};
+                
+                batchMessages.forEach((message, index) => {
+                    batch[`candles_plants_message${index + 1}`] = message;
+                });
+                
+                batches.push(batch);
+            }
+            
+            result[locationName] = {
+                candles_plants_data: batches
+            };
+        }
+    });
+    
+    return {
+        data: result,
+        orderNumbers: processedOrderNumbers
+    };
+}
+
+function processProseccosData(rawData, validLocations) {
+    const locationGroups = {};
+    const processedOrderNumbers = [];
+    
+    validLocations.forEach(location => {
+        locationGroups[location] = [];
+    });
+    
+    rawData.forEach(order => {
+        const messageValue = extractProseccoMessage(order.properties);
+        
+        if (messageValue && order.location_name) {
+            const locationName = order.location_name;
+            
+            if (validLocations.includes(locationName)) {
+                let cleanMessage;
+                try {
+                    const parsedMessage = JSON.parse(messageValue);
+                    cleanMessage = parsedMessage.replace(/\s+/g, ' ').trim();
+                } catch (error) {
+                    cleanMessage = messageValue.replace(/\s+/g, ' ').trim();
+                }
+                
+                locationGroups[locationName].push(cleanMessage);
+                
+                // Add this order number to processed list since we used its message
+                if (order.order_number) {
+                    processedOrderNumbers.push(order.order_number);
+                }
+            }
+        }
+    });
+    
+    const result = {};
+    
+    validLocations.forEach(locationName => {
+        const messages = locationGroups[locationName] || [];
+        
+        if (messages.length > 0) {
+            const batches = [];
+            
+            for (let i = 0; i < messages.length; i += 6) {
+                const batchMessages = messages.slice(i, i + 6);
+                const batch = {};
+                
+                batchMessages.forEach((message, index) => {
+                    batch[`prosecco_message${index + 1}`] = message;
+                });
+                
+                batches.push(batch);
+            }
+            
+            result[locationName] = {
+                prosecco_data: batches
+            };
+        }
+    });
+    
+    return {
+        data: result,
+        orderNumbers: processedOrderNumbers
+    };
+}
+
+// Extract polaroid image URL from properties
+function extractPolaroidMessage(properties) {
+    try {
+        const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
+        
+        if (!Array.isArray(propertiesArray)) {
+            return null;
+        }
+        
+        // Look for 'Personalised Polaroid' first, then 'image'
+        for (const prop of propertiesArray) {
+            if (prop.name === 'Personalised Polaroid' && prop.value) {
+                return prop.value;
+            }
+        }
+        
+        // Fallback to 'image'
+        for (const prop of propertiesArray) {
+            if (prop.name === 'image' && prop.value) {
+                return prop.value;
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error extracting polaroid message:', error);
+        return null;
+    }
+}
+
+// Process polaroid data similar to other personalized products
+function processPolaroidData(rawData, validLocations) {
+    const locationGroups = {};
+    const processedOrderNumbers = [];
+    
+    validLocations.forEach(location => {
+        locationGroups[location] = [];
+    });
+    
+    rawData.forEach(order => {
+        const imageUrl = extractPolaroidMessage(order.properties);
+        
+        if (imageUrl && order.location_name && order.order_number) {
+            const locationName = order.location_name;
+            
+            if (validLocations.includes(locationName)) {
+                // Store both the URL and order number for processing
+                locationGroups[locationName].push({
+                    url: imageUrl.trim(),
+                    order_number: order.order_number
+                });
+                
+                // Add this order number to processed list since we used its image
+                processedOrderNumbers.push(order.order_number);
+            }
+        }
+    });
+    
+    const result = {};
+    
+    validLocations.forEach(locationName => {
+        const images = locationGroups[locationName] || [];
+        
+        if (images.length > 0) {
+            // No batching for polaroid photos - all images in one batch
+            const batch = {};
+            
+            images.forEach((imageData, index) => {
+                batch[`polaroid_url_${index + 1}`] = imageData.url;
+                batch[`polaroid_order_${index + 1}`] = imageData.order_number;
+            });
+            
+            result[locationName] = {
+                polaroid_photo_data: [batch] // Array with single batch containing all images
+            };
+        }
+    });
+    
+    return {
+        data: result,
+        orderNumbers: processedOrderNumbers
+    };
+}
+
+function combinePersonalizedData(jarsResult, candlesPlantsResult, proseccosResult, polaroidResult, validLocations) {
+    const combinedResult = [];
+    
+    validLocations.forEach(locationName => {
+        const locationJars = jarsResult[locationName];
+        const locationCandlesPlants = candlesPlantsResult[locationName];
+        const locationProseccos = proseccosResult[locationName];
+        const locationPolaroid = polaroidResult[locationName]; // NEW
+        
+        // Add jars_luxe_data as separate line item if it exists
+        if (locationJars && locationJars.jars_luxe_data) {
+            combinedResult.push({
+                location: locationName,
+                jars_luxe_data: locationJars.jars_luxe_data
+            });
+        }
+        
+        // Add jars_classic_large_data as separate line item if it exists
+        if (locationJars && locationJars.jars_classic_large_data) {
+            combinedResult.push({
+                location: locationName,
+                jars_classic_large_data: locationJars.jars_classic_large_data
+            });
+        }
+        
+        // Add candles_plants_data as separate line item if it exists
+        if (locationCandlesPlants && locationCandlesPlants.candles_plants_data) {
+            combinedResult.push({
+                location: locationName,
+                candles_plants_data: locationCandlesPlants.candles_plants_data
+            });
+        }
+        
+        // Add prosecco_data as separate line item if it exists
+        if (locationProseccos && locationProseccos.prosecco_data) {
+            combinedResult.push({
+                location: locationName,
+                prosecco_data: locationProseccos.prosecco_data
+            });
+        }
+        
+        // Add polaroid_photo_data as separate line item if it exists (NEW)
+        if (locationPolaroid && locationPolaroid.polaroid_photo_data) {
+            combinedResult.push({
+                location: locationName,
+                polaroid_photo_data: locationPolaroid.polaroid_photo_data
+            });
+        }
+    });
+    
+    return combinedResult;
+}
+
+module.exports = {
+    query,
+    transform
+};
