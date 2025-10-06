@@ -5,7 +5,8 @@ SELECT
     so.process_status,
     so.shop_id,
     sfl.location_name,
-    sode.delivery_date
+    sode.delivery_date,
+    (SELECT GROUP_CONCAT(DISTINCT sp2.title ORDER BY sp2.title SEPARATOR ', ') FROM shopify_order_products sop2 LEFT JOIN shopify_products sp2 ON sp2.variant_id = sop2.variant_id WHERE sop2.order_id = so.id) as order_products
 FROM (
     SELECT
         so.id,
@@ -39,7 +40,7 @@ FROM (
         shopify_order_additional_details sode ON so.id = sode.order_id
     WHERE
         so.shop_id IN (PLACEHOLDER_SHOP_IDS)
-        AND sode.delivery_date = '2025-09-02'
+        AND sode.delivery_date = 'PLACEHOLDER_DELIVERY_DATE'
         AND so.process_status IS NULL
         AND sode.is_same_day = PLACEHOLDER_IS_SAME_DAY
         AND sfl.location_name IN ('Melbourne', 'Sydney', 'Perth', 'Adelaide', 'Brisbane')
@@ -60,13 +61,15 @@ ORDER BY
 function transform(rawData) {
     console.log('Orders Transform: Processing', rawData.length, 'raw orders');
 
-    // Create array of objects with order_number, location, and shop_id
+    // Create array of objects with store, order_number, location, shop_id, and order_products
     const orderData = rawData
         .filter(row => row.order_number && row.location_name) // Filter out any null/undefined values
         .map(row => ({
+            store: row.shop_id === 10 ? 'LVLY' : row.shop_id === 6 ? 'BL' : '',
             order_number: row.order_number,
             location: row.location_name,
-            shop_id: row.shop_id
+            shop_id: row.shop_id,
+            order_products: row.order_products || '' // Include order_products, default to empty string if null
         }))
         .filter((orderData, index, array) =>
             // Remove duplicates based on order_number

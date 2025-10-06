@@ -22,9 +22,9 @@ class GoPeopleApiService {
           timeout: 5000 // 5 second timeout
         }
       );
-      console.log("GP Result: ", response.data.result);
-      console.log("GP barcode: ", response.data.result.barcodes);
-      console.log("GP to: ", response.data.result.addressTo);
+      // console.log("GP Result: ", response.data.result);
+      // console.log("GP barcode: ", response.data.result.barcodes);
+      // console.log("GP to: ", response.data.result.addressTo);
 
       const isSuccess = response.data.errorCode === 0 && (response.status === 200 || response.status === 201);
 

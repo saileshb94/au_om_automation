@@ -72,7 +72,7 @@ class OrderProcessingPipeline {
       
       // Step 0: Get current batch numbers from Firestore
       console.log('Batch Management: Fetching current batch numbers...');
-      const currentBatchNumbers = await this.batchService.getBatchNumbers(deliveryDate);
+      const currentBatchNumbers = await this.batchService.getBatchNumbers(deliveryDate, this.requestParams.is_same_day);
       
       console.log('Starting database connection...');
       connection = await mysql.createConnection(this.dbConfig);
@@ -105,9 +105,11 @@ class OrderProcessingPipeline {
         // Initialize tracking array with order numbers, delivery date, locations, and batch numbers
         if (ordersResult.data && Array.isArray(ordersResult.data) && ordersResult.data.length > 0) {
           orderTrackingArray = ordersResult.data.map(orderData => ({
+            store: orderData.shop_id === 10 ? 'LVLY' : orderData.shop_id === 6 ? 'BL' : '',
             order_number: orderData.order_number,
             delivery_date: deliveryDate,
             location: orderData.location,
+            is_same_day: this.requestParams.is_same_day === '1' ? 'Same_day' : 'Next_day',
             batch: finalBatchNumbers[orderData.location],
             gopeople_status: false,
             gopeople_error: null,
@@ -116,7 +118,8 @@ class OrderProcessingPipeline {
             personalized_status: false,
             packing_slip_status: false,
             message_cards_status: false,
-            updateProcessingStatus: false
+            updateProcessingStatus: false,
+            order_products: orderData.order_products || ''
           }));
           console.log(`Initialized tracking array with ${orderTrackingArray.length} orders`);
         }
@@ -142,7 +145,7 @@ class OrderProcessingPipeline {
         failureCount += newFailureCount;
 
         // Step 2.5: Update batch numbers based on successful gopeople orders
-        finalBatchNumbers = await this.updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, 'gopeople');
+        finalBatchNumbers = await this.updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, 'gopeople', this.requestParams.is_same_day);
       } else {
         console.log(`✅ Routing to Auspost`);
         console.log(`=== END LOGISTICS ROUTING ===\n`);
@@ -155,7 +158,7 @@ class OrderProcessingPipeline {
         failureCount += newFailureCount;
 
         // Step 2.5: Update batch numbers based on successful auspost orders
-        finalBatchNumbers = await this.updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, 'auspost');
+        finalBatchNumbers = await this.updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, 'auspost', this.requestParams.is_same_day);
       }
 
       // Step 2.75: Pre-create folder structure for successful logistics orders
@@ -521,7 +524,7 @@ class OrderProcessingPipeline {
     });
   }
 
-  async updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, provider = 'gopeople') {
+  async updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, provider = 'gopeople', isSameDay) {
     if (orderTrackingArray.length > 0) {
       const statusField = provider === 'gopeople' ? 'gopeople_status' : 'auspost_status';
 
@@ -533,7 +536,7 @@ class OrderProcessingPipeline {
       }, {});
 
       console.log(`Batch Management: Updating batch numbers based on successful ${provider} orders:`, successfulLogisticsLocationCounts);
-      const finalBatchNumbers = await this.batchService.updateBatchNumbers(deliveryDate, successfulLogisticsLocationCounts, currentBatchNumbers);
+      const finalBatchNumbers = await this.batchService.updateBatchNumbers(deliveryDate, successfulLogisticsLocationCounts, currentBatchNumbers, isSameDay);
 
       orderTrackingArray.forEach(entry => {
         if (entry.location && finalBatchNumbers[entry.location] !== undefined) {
@@ -1374,31 +1377,48 @@ class OrderProcessingPipeline {
         throw new Error(`Google Sheets configuration validation failed: ${configValidation.issues.join(', ')}`);
       }
 
+      // Write orders to Orders sheet
       const writeResults = await this.googleSheetsService.appendOrdersToSheet(orderTrackingArray);
 
+      // Generate and write batch details to Batches sheet
+      const batchDetails = this.googleSheetsService.generateBatchDetails(orderTrackingArray);
+      const batchWriteResults = await this.googleSheetsService.appendBatchDetailsToSheet(batchDetails);
+
+      // Combine results
+      const combinedSuccess = writeResults.success && batchWriteResults.success;
+      const combinedResults = {
+        success: combinedSuccess,
+        orders: writeResults,
+        batches: batchWriteResults,
+        batchDetails: batchDetails // Include batch details for response
+      };
+
       // Store the results
-      results['google_sheets_write'] = writeResults;
+      results['google_sheets_write'] = combinedResults;
 
       executionDetails['google_sheets_write'] = {
         scriptKey: 'google_sheets_write',
         name: 'Google Sheets Write Service',
-        success: writeResults.success,
+        success: combinedSuccess,
         skipped: false,
         devModeSkipped: false,
         executionTime: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         appliedParams: this.requestParams,
-        rowsWritten: writeResults.rowsWritten,
+        ordersWritten: writeResults.rowsWritten,
+        batchesWritten: batchWriteResults.rowsWritten,
         spreadsheetId: writeResults.spreadsheetId,
-        sheetName: writeResults.sheetName,
-        error: writeResults.error || null
+        ordersSheetName: writeResults.sheetName,
+        batchesSheetName: batchWriteResults.sheetName,
+        ordersError: writeResults.error || null,
+        batchesError: batchWriteResults.error || null
       };
 
-      if (writeResults.success) {
-        console.log(`Google Sheets write completed successfully. Wrote ${writeResults.rowsWritten} rows.`);
+      if (combinedSuccess) {
+        console.log(`Google Sheets write completed successfully. Wrote ${writeResults.rowsWritten} order rows and ${batchWriteResults.rowsWritten} batch rows.`);
         successCount = 1;
       } else {
-        console.log(`Google Sheets write completed with errors: ${writeResults.error}`);
+        console.log(`Google Sheets write completed with errors. Orders: ${writeResults.error || 'OK'}, Batches: ${batchWriteResults.error || 'OK'}`);
         failureCount = 1;
       }
 

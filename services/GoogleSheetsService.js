@@ -146,6 +146,7 @@ class GoogleSheetsService {
         spreadsheetId: this.config.spreadsheetId,
         range: range,
         valueInputOption: valueInputOption,
+        insertDataOption: 'INSERT_ROWS', // Insert new rows instead of overwriting
         requestBody: {
           values: rows
         }
@@ -232,6 +233,166 @@ class GoogleSheetsService {
     } catch (error) {
       console.error('Error checking/creating sheet:', error.message);
       throw error;
+    }
+  }
+
+  /**
+   * Generate batch details from order tracking array
+   * Groups orders by (store, delivery_date, location, is_same_day, batch)
+   * @param {Array} orderTrackingArray - Array of order tracking objects
+   * @returns {Array} Array of batch detail objects
+   */
+  generateBatchDetails(orderTrackingArray) {
+    if (!orderTrackingArray || !Array.isArray(orderTrackingArray) || orderTrackingArray.length === 0) {
+      return [];
+    }
+
+    const timestamp = new Date().toISOString();
+    const batchMap = {};
+
+    // Group orders by batch key
+    orderTrackingArray.forEach(order => {
+      const batchKey = `${order.store}|${order.delivery_date}|${order.location}|${order.is_same_day}|${order.batch}`;
+
+      if (!batchMap[batchKey]) {
+        batchMap[batchKey] = {
+          store: order.store,
+          delivery_date: order.delivery_date,
+          city: order.location,
+          same_day: order.is_same_day,
+          batch: order.batch,
+          successOrders: [],
+          failedOrders: []
+        };
+      }
+
+      // Check if order succeeded (either gopeople_status OR auspost_status is true)
+      const isSuccess = order.gopeople_status === true || order.auspost_status === true;
+
+      if (isSuccess) {
+        batchMap[batchKey].successOrders.push(order.order_number);
+      } else {
+        // Failed: both gopeople_status AND auspost_status are false
+        batchMap[batchKey].failedOrders.push(order.order_number);
+      }
+    });
+
+    // Transform map to array of batch details
+    const batchDetails = Object.values(batchMap).map(batch => ({
+      store: batch.store,
+      delivery_date: batch.delivery_date,
+      city: batch.city,
+      same_day: batch.same_day,
+      batch: batch.batch,
+      count_success_orders: batch.successOrders.length,
+      orders: batch.successOrders.join(', '),
+      failed_orders: batch.failedOrders.join(', '),
+      timestamp: timestamp
+    }));
+
+    console.log(`Generated ${batchDetails.length} batch detail entries from ${orderTrackingArray.length} orders`);
+    return batchDetails;
+  }
+
+  /**
+   * Transform batch details array into sheet rows
+   * @param {Array} batchDetailsArray - Array of batch detail objects
+   * @returns {Array} Array of row values matching batchesColumns order
+   */
+  transformBatchDetailsToRows(batchDetailsArray) {
+    return batchDetailsArray.map(batchDetail => {
+      return this.config.batchesColumns.map(column => {
+        const value = batchDetail[column];
+
+        // Handle null/undefined values
+        if (value === null || value === undefined) {
+          return '';
+        }
+
+        // Convert to string
+        return value.toString();
+      });
+    });
+  }
+
+  /**
+   * Append batch details to Batches sheet
+   * @param {Array} batchDetailsArray - Array of batch detail objects
+   * @returns {Object} Result of the operation
+   */
+  async appendBatchDetailsToSheet(batchDetailsArray) {
+    const startTime = Date.now();
+
+    try {
+      // Validate configuration
+      const validation = this.validateConfiguration();
+      if (!validation.valid) {
+        throw new Error(`Configuration validation failed: ${validation.issues.join(', ')}`);
+      }
+
+      // Initialize if not already done
+      await this.initialize();
+
+      // Validate input
+      if (!batchDetailsArray || !Array.isArray(batchDetailsArray) || batchDetailsArray.length === 0) {
+        return {
+          success: true,
+          message: 'No batch details to write to Google Sheets',
+          rowsWritten: 0,
+          executionTime: Date.now() - startTime
+        };
+      }
+
+      console.log(`\n📊 === GOOGLE SHEETS BATCHES WRITE OPERATION ===`);
+      console.log(`Spreadsheet ID: ${this.config.spreadsheetId}`);
+      console.log(`Sheet Name: ${this.config.batchesSheetName}`);
+      console.log(`Batch details to write: ${batchDetailsArray.length}`);
+
+      // Transform batch details to row format
+      const rows = this.transformBatchDetailsToRows(batchDetailsArray);
+
+      // Prepare the request
+      const range = `${this.config.batchesSheetName}!A:A`; // Start from column A
+      const valueInputOption = 'USER_ENTERED';
+
+      // Append data to sheet
+      const response = await this.sheets.spreadsheets.values.append({
+        spreadsheetId: this.config.spreadsheetId,
+        range: range,
+        valueInputOption: valueInputOption,
+        insertDataOption: 'INSERT_ROWS', // Insert new rows instead of overwriting
+        requestBody: {
+          values: rows
+        }
+      });
+
+      const updatedRange = response.data.updates.updatedRange;
+      const updatedRows = response.data.updates.updatedRows;
+
+      console.log(`✅ Successfully wrote ${updatedRows} batch detail rows to ${updatedRange}`);
+      console.log(`=== END GOOGLE SHEETS BATCHES WRITE OPERATION ===\n`);
+
+      return {
+        success: true,
+        message: `Successfully wrote ${updatedRows} batch details to Google Sheets`,
+        rowsWritten: updatedRows,
+        updatedRange: updatedRange,
+        executionTime: Date.now() - startTime,
+        spreadsheetId: this.config.spreadsheetId,
+        sheetName: this.config.batchesSheetName
+      };
+
+    } catch (error) {
+      console.error('Error writing batch details to Google Sheets:', error.message);
+
+      return {
+        success: false,
+        error: error.message,
+        rowsWritten: 0,
+        executionTime: Date.now() - startTime,
+        spreadsheetId: this.config.spreadsheetId,
+        sheetName: this.config.batchesSheetName
+      };
     }
   }
 }

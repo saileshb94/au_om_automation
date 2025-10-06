@@ -71,6 +71,47 @@ class ValidationHelper {
     return value;
   }
 
+  static parseLocation(locationParam) {
+    // Valid Australian cities supported by the system
+    const validCities = ['Melbourne', 'Sydney', 'Perth', 'Adelaide', 'Brisbane'];
+
+    if (!locationParam || locationParam.trim() === '') {
+      console.log('location parameter not provided or empty, will process all locations');
+      return {
+        locations: [],
+        hasLocationFilter: false
+      };
+    }
+
+    // Split by comma, trim whitespace, and filter empty strings
+    const locations = locationParam
+      .split(',')
+      .map(loc => loc.trim())
+      .filter(loc => loc.length > 0);
+
+    // Validate against known cities
+    const validLocations = locations.filter(loc => validCities.includes(loc));
+    const invalidLocations = locations.filter(loc => !validCities.includes(loc));
+
+    if (invalidLocations.length > 0) {
+      console.log(`Warning: Invalid location(s) ignored: ${invalidLocations.join(', ')}`);
+    }
+
+    if (validLocations.length === 0) {
+      console.log('No valid locations provided, will process all locations');
+      return {
+        locations: [],
+        hasLocationFilter: false
+      };
+    }
+
+    console.log(`location parameter parsed: ${validLocations.join(', ')} (${validLocations.length} location${validLocations.length > 1 ? 's' : ''})`);
+    return {
+      locations: validLocations,
+      hasLocationFilter: true
+    };
+  }
+
   static parseStore(storeParam) {
     // Default to "1" (LVLY only) if not provided
     const defaultValue = "1";
@@ -122,10 +163,12 @@ class ValidationHelper {
 
   static parseAndValidateRequestParams(query) {
     const storeInfo = ValidationHelper.parseStore(query.store);
+    const locationInfo = ValidationHelper.parseLocation(query.location);
 
     return {
       date: query.date || null,
-      location: query.location || null,
+      locations: locationInfo.locations,
+      hasLocationFilter: locationInfo.hasLocationFilter,
       dev_mode: ValidationHelper.parseDevMode(query.dev_mode),
       is_same_day: ValidationHelper.parseIsSameDay(query.is_same_day),
       store: storeInfo.store,

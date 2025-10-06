@@ -90,11 +90,17 @@ class ResponseFormatter {
       gpPrintingLabels = JSON.stringify(gpLabelsApiResults.gpLabelsData);
     }
 
+    // Extract batch details from Google Sheets results
+    let batchDetails = null;
+    if (googleSheetsResults && googleSheetsResults.successCount > 0 && results['google_sheets_write'] && results['google_sheets_write'].batchDetails) {
+      batchDetails = results['google_sheets_write'].batchDetails;
+    }
+
     // Apply Zapier formatting if needed
     if (isZapierRequest) {
       results = ResponseFormatter.formatForZapier(results);
     }
-    
+
     return {
       success: successCount > 0,
       message: `Executed ${successCount + failureCount} scripts`,
@@ -114,14 +120,15 @@ class ResponseFormatter {
         locationOrderCounts: locationSummary || {}
       },
       executionDetails,
-      data: results,
-      gp_printing_labels: gpPrintingLabels,
-      folderPreCreation: folderPreCreationResults,
-      polaroidProcessing: polaroidProcessingResults,
-      personalizedApiService: personalizedApiResults,
+      // data: results,
+      // gp_printing_labels: gpPrintingLabels,
+      // folderPreCreation: folderPreCreationResults,
+      // polaroidProcessing: polaroidProcessingResults,
+      // personalizedApiService: personalizedApiResults,
       gpLabelsApiService: gpLabelsApiResults,
-      googleSheetsWrite: googleSheetsResults,
-      overall: orderTrackingArray
+      // googleSheetsWrite: googleSheetsResults,
+      overall: orderTrackingArray,
+      batchDetails: batchDetails
     };
   }
 }

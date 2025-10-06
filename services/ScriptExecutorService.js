@@ -11,9 +11,17 @@ class ScriptExecutorService {
     
     try {
       console.log(`Executing script: ${scriptKey} with params:`, requestParams);
-      
+
       // Build dynamic query with parameters
       const { query, params } = QueryBuilder.buildDynamicQuery(scriptConfig.scriptModule.query, requestParams, scriptKey);
+
+      // Log the final SQL query for orders script
+      if (scriptKey === 'orders') {
+        console.log(`\n📋 === ORDERS SCRIPT SQL QUERY ===`);
+        console.log(query);
+        console.log(`Query Parameters:`, params);
+        console.log(`=== END ORDERS SCRIPT SQL QUERY ===\n`);
+      }
 
       // Execute SQL query with parameters
       const [rawResults] = await this.connection.execute(query, params);

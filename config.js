@@ -678,9 +678,11 @@ const GOOGLE_SHEETS_CONFIG = {
   sheetName: 'Orders', // The name of the tab/sheet to write to
   // Column headers and order of fields to write
   columns: [
+    'store',
     'order_number',
     'delivery_date',
     'location',
+    'is_same_day',
     'batch',
     'gopeople_status',
     'gopeople_error',
@@ -690,6 +692,20 @@ const GOOGLE_SHEETS_CONFIG = {
     'packing_slip_status',
     'message_cards_status',
     'updateProcessingStatus',
+    'order_products',
+    'timestamp'
+  ],
+  // Batches sheet configuration
+  batchesSheetName: 'Batches', // The name of the batch details sheet
+  batchesColumns: [
+    'store',
+    'delivery_date',
+    'city',
+    'same_day',
+    'batch',
+    'count_success_orders',
+    'orders',
+    'failed_orders',
     'timestamp'
   ]
 };
