@@ -199,13 +199,173 @@ class GoogleDriveService {
                 }
             });
 
+            const detectedContentType = response.headers['content-type'] || 'image/jpeg';
+            console.log(`=== DOWNLOAD DEBUG ===`);
+            console.log(`URL: ${url.substring(0, 100)}...`);
+            console.log(`Response Status: ${response.status}`);
+            console.log(`Content-Type Header: "${response.headers['content-type']}"`);
+            console.log(`Detected Content-Type: "${detectedContentType}"`);
+            console.log(`Content-Length: ${response.headers['content-length']}`);
+            console.log(`All Response Headers:`, Object.keys(response.headers));
+            console.log(`=== END DOWNLOAD DEBUG ===`);
+
             return {
                 stream: response.data,
-                contentType: response.headers['content-type'] || 'image/jpeg',
+                contentType: detectedContentType,
                 contentLength: response.headers['content-length']
             };
         } catch (error) {
             console.error(`Error downloading image from ${url}:`, error.message);
+            throw error;
+        }
+    }
+
+    // Extract direct image URL from different URL types for test function only
+    async extractDirectImageUrl(originalUrl, orderCreatedAt) {
+        console.log(`=== URL PROCESSING START ===`);
+        console.log(`Original URL: ${originalUrl}`);
+        console.log(`Order created at: ${orderCreatedAt}`);
+
+        try {
+            // Type 1: upcdn.io URLs - already direct image files
+            if (originalUrl.includes('upcdn.io')) {
+                console.log(`✓ upcdn.io URL detected - direct image file`);
+                console.log(`Direct URL: ${originalUrl}`);
+                console.log(`=== URL PROCESSING END ===`);
+                return originalUrl;
+            }
+
+            // Type 2: cdn.shopify.com URLs - construct direct URL
+            if (originalUrl.includes('cdn.shopify.com')) {
+                console.log(`✓ Shopify CDN URL detected - constructing direct URL`);
+
+                const directUrl = await this.constructShopifyDirectUrl(originalUrl, orderCreatedAt);
+                console.log(`✓ Constructed direct URL: ${directUrl}`);
+                console.log(`=== URL PROCESSING END ===`);
+                return directUrl;
+            }
+
+            // If no patterns match, return original URL
+            console.log(`✗ Unknown URL type - using original URL`);
+            console.log(`=== URL PROCESSING END ===`);
+            return originalUrl;
+
+        } catch (error) {
+            console.log(`✗ Error during URL processing: ${error.message}`);
+            console.log(`✓ Falling back to original URL`);
+            console.log(`=== URL PROCESSING END ===`);
+            return originalUrl;
+        }
+    }
+
+    // Convert Shopify CDN URL using PHP-style conversion for test function only
+    async constructShopifyDirectUrl(pageUrl, orderCreatedAt) {
+        console.log(`=== SHOPIFY URL CONVERSION START ===`);
+        console.log(`Input URL: ${pageUrl}`);
+
+        try {
+            // Parse the URL and its query string
+            const urlObj = new URL(pageUrl);
+            const queryParams = urlObj.searchParams;
+
+            console.log(`✓ Parsed URL successfully`);
+            console.log(`Query parameters found: ${Array.from(queryParams.keys()).join(', ')}`);
+
+            // Extract values following PHP logic
+            const name = queryParams.get('ph_image') || '';
+            const originalRaw = queryParams.get('ph_name') || '';
+            const extensionRaw = queryParams.get('extension') || '';
+
+            console.log(`✓ Raw parameters extracted:`);
+            console.log(`  ph_image (name): ${name}`);
+            console.log(`  ph_name (originalRaw): ${originalRaw}`);
+            console.log(`  extension (extensionRaw): ${extensionRaw}`);
+
+            if (!name) {
+                console.log(`✗ No ph_image parameter found in URL`);
+                throw new Error('No ph_image parameter found in URL');
+            }
+
+            // Convert ph_name: remove all non-alphanumeric characters
+            const original = originalRaw.replace(/[^A-Za-z0-9]/g, '');
+            console.log(`✓ Cleaned ph_name: "${originalRaw}" → "${original}"`);
+
+            // Determine extension: remove equals signs (handle cases like j=p=e=g)
+            const ext = extensionRaw.replace(/=/g, '');
+            console.log(`✓ Cleaned extension: "${extensionRaw}" → "${ext}"`);
+
+            // Check if crop is in the path
+            const hasCrop = urlObj.pathname.includes('/crop/');
+            const is_crop = hasCrop ? 'true' : 'false';
+            console.log(`✓ Crop detection: path="${urlObj.pathname}" → is_crop="${is_crop}"`);
+
+            // Define the shop manually
+            const shop = 'ltg-lvly-au2.myshopify.com';
+            console.log(`✓ Shop set to: ${shop}`);
+
+            // Build final URL
+            const finalUrl = `https://uploadly-filename.com/index.php?name=${encodeURIComponent(name)}&ext=${encodeURIComponent(ext)}&original=${encodeURIComponent(original)}&is_crop=${is_crop}&shop=${encodeURIComponent(shop)}`;
+
+            console.log(`✓ Final converted URL: ${finalUrl}`);
+            console.log(`=== SHOPIFY URL CONVERSION END ===`);
+            return finalUrl;
+
+        } catch (error) {
+            console.log(`✗ Error converting Shopify URL: ${error.message}`);
+            console.log(`=== SHOPIFY URL CONVERSION END ===`);
+            throw error;
+        }
+    }
+
+
+    // New blob-based image download specifically for test function
+    async downloadImageAsBlob(url) {
+        try {
+            console.log(`Downloading image as blob from: ${url.substring(0, 100)}...`);
+
+            // Use blob response type instead of stream to get complete binary data
+            const response = await axios({
+                method: 'get',
+                url: url,
+                responseType: 'arraybuffer', // Get raw binary data
+                timeout: GOOGLE_DRIVE_CONFIG.imageSettings.downloadTimeout,
+                maxContentLength: GOOGLE_DRIVE_CONFIG.imageSettings.maxFileSize,
+                maxBodyLength: GOOGLE_DRIVE_CONFIG.imageSettings.maxFileSize,
+                headers: {
+                    'Accept': 'image/*',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            });
+
+            const detectedContentType = response.headers['content-type'] || 'image/jpeg';
+            console.log(`=== BLOB DOWNLOAD DEBUG ===`);
+            console.log(`URL: ${url.substring(0, 100)}...`);
+            console.log(`Response Status: ${response.status}`);
+            console.log(`Content-Type Header: "${response.headers['content-type']}"`);
+            console.log(`Detected Content-Type: "${detectedContentType}"`);
+            console.log(`Content-Length: ${response.headers['content-length']}`);
+            console.log(`Data Buffer Length: ${response.data.length}`);
+            console.log(`=== END BLOB DOWNLOAD DEBUG ===`);
+
+            // Convert ArrayBuffer to Buffer for Node.js stream compatibility
+            const buffer = Buffer.from(response.data);
+
+            // Create a readable stream from the buffer
+            const { Readable } = require('stream');
+            const stream = new Readable({
+                read() {
+                    this.push(buffer);
+                    this.push(null); // End the stream
+                }
+            });
+
+            return {
+                stream: stream,
+                contentType: detectedContentType,
+                contentLength: buffer.length
+            };
+        } catch (error) {
+            console.error(`Error downloading image as blob from ${url}:`, error.message);
             throw error;
         }
     }
@@ -241,26 +401,52 @@ class GoogleDriveService {
 
     getFileExtensionFromUrl(url) {
         try {
-            // Extract extension from URL
+            // Extract extension from URL path
             const urlPath = new URL(url).pathname;
-            const extension = path.extname(urlPath).toLowerCase();
-            
-            // If no extension found in URL, try to detect from content
+            let extension = path.extname(urlPath).toLowerCase();
+
+            // If no extension found in URL path, try to extract from query parameters
             if (!extension) {
-                // Default to .jpg if we can't determine
-                return '.jpg';
+                const urlObj = new URL(url);
+                const pathWithQuery = urlObj.pathname + urlObj.search;
+
+                // Look for common image file patterns in the full URL
+                const imageExtensionMatch = pathWithQuery.match(/\.(jpe?g|png|gif|webp|bmp|heic|heif)/i);
+                if (imageExtensionMatch) {
+                    extension = '.' + imageExtensionMatch[1].toLowerCase();
+                }
             }
-            
+
+            // Normalize common variations
+            if (extension === '.jpeg') extension = '.jpg';
+
             // Validate against supported formats
-            if (GOOGLE_DRIVE_CONFIG.imageSettings.supportedFormats.includes(extension)) {
+            if (extension && GOOGLE_DRIVE_CONFIG.imageSettings.supportedFormats.includes(extension)) {
+                console.log(`Detected file extension: ${extension} from URL`);
                 return extension;
             }
-            
+
+            console.log(`Unsupported or unknown extension (${extension}), defaulting to .jpg`);
             return '.jpg'; // Default fallback
         } catch (error) {
             console.error('Error extracting file extension:', error.message);
             return '.jpg';
         }
+    }
+
+    getMimeTypeFromExtension(extension) {
+        const mimeTypes = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.bmp': 'image/bmp',
+            '.heic': 'image/heic',
+            '.heif': 'image/heif'
+        };
+
+        return mimeTypes[extension] || 'image/jpeg';
     }
 
     async processPolaroidImages(personalizedData, deliveryDate, batchNumbers) {
@@ -327,29 +513,59 @@ class GoogleDriveService {
                         await Promise.all(currentBatch.map(async (urlKey) => {
                             const imageUrl = batch[urlKey];
                             const orderKey = urlKey.replace('polaroid_url_', 'polaroid_order_');
+                            const createdKey = urlKey.replace('polaroid_url_', 'polaroid_created_');
                             const orderNumber = batch[orderKey];
+                            const orderCreatedAt = batch[createdKey];
 
                             if (!imageUrl || !orderNumber) return;
 
                             try {
-                                // Download the image (using streaming)
-                                const { stream, contentType } = await this.downloadImage(imageUrl);
-                                
-                                // Generate filename: orderNumber + extension
-                                const extension = this.getFileExtensionFromUrl(imageUrl);
-                                const fileName = `${orderNumber}${extension}`;
+                                console.log(`\n=== PROCESSING PRODUCTION IMAGE ===`);
+                                console.log(`Order: ${orderNumber}`);
+                                console.log(`Original URL: ${imageUrl.substring(0, 100)}...`);
+                                console.log(`Created at: ${orderCreatedAt}`);
 
-                                // Upload to Google Drive
+                                // Extract direct image URL based on URL type (same logic as test function)
+                                const directImageUrl = await this.extractDirectImageUrl(imageUrl, orderCreatedAt);
+                                console.log(`Using URL for download: ${directImageUrl.substring(0, 100)}...`);
+
+                                // Download the image using blob method (same as test function)
+                                const { stream, contentType } = await this.downloadImageAsBlob(directImageUrl);
+
+                                // Extract extension from the final direct URL
+                                let extension = '.jpg'; // default fallback
+                                try {
+                                    const urlObj = new URL(directImageUrl);
+                                    const pathname = urlObj.pathname;
+                                    const pathExtension = pathname.split('.').pop();
+                                    if (pathExtension && pathExtension.length <= 5) {
+                                        const candidateExt = '.' + pathExtension.toLowerCase();
+                                        const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp'];
+                                        if (validExtensions.includes(candidateExt)) {
+                                            extension = candidateExt;
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.log(`Error extracting extension from URL: ${error.message}, using .jpg`);
+                                }
+
+                                const fileName = `${orderNumber}${extension}`;
+                                const correctMimeType = this.getMimeTypeFromExtension(extension);
+                                console.log(`Final: ${fileName} (${correctMimeType})`);
+                                console.log(`=== END PROCESSING PRODUCTION IMAGE ===`);
+
+                                // Upload to Google Drive with correct MIME type
                                 const uploadResult = await this.uploadImageToFolder(
                                     batchFolderId,
                                     fileName,
                                     stream,
-                                    contentType
+                                    correctMimeType
                                 );
 
                                 batchResults.images.push({
                                     orderNumber: orderNumber,
                                     originalUrl: imageUrl,
+                                    directUrl: directImageUrl,
                                     fileName: fileName,
                                     driveFileId: uploadResult.fileId,
                                     webViewLink: uploadResult.webViewLink,
@@ -363,6 +579,7 @@ class GoogleDriveService {
                                 batchResults.images.push({
                                     orderNumber: orderNumber,
                                     originalUrl: imageUrl,
+                                    directUrl: null, // Set to null since extraction may have failed
                                     fileName: null,
                                     driveFileId: null,
                                     webViewLink: null,
@@ -414,6 +631,275 @@ class GoogleDriveService {
                     failedUploads: failureCount,
                     locationsProcessed: results.length
                 }
+            };
+        }
+    }
+
+    // Test method for polaroid processing with specific order number
+    async testPolaroidProcessing(orderNumber) {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        console.log(`Starting test polaroid processing for order: ${orderNumber}`);
+
+        try {
+            // Simple query to get polaroid data for the specific order
+            const mysql = require('mysql2/promise');
+            const dbConfig = {
+                host: process.env.DB_HOST,
+                user: process.env.DB_USER,
+                password: process.env.DB_PASSWORD,
+                database: process.env.DB_NAME,
+                port: process.env.DB_PORT || 3306
+            };
+
+            const connection = await mysql.createConnection(dbConfig);
+
+            try {
+                const query = `
+                    SELECT
+                        so.order_number,
+                        so.created_at,
+                        sop.properties
+                    FROM flowerchimp.shopify_orders so
+                    LEFT JOIN shopify_order_products sop ON so.id = sop.order_id
+                    LEFT JOIN shopify_products sp ON sp.variant_id = sop.variant_id
+                    WHERE so.order_number = ?
+                        AND sp.tags LIKE '%product:imageupload%'
+                `;
+
+                const [results] = await connection.execute(query, [orderNumber]);
+
+                if (results.length === 0) {
+                    return {
+                        success: false,
+                        error: `No polaroid data found for order number: ${orderNumber}`,
+                        orderNumber: orderNumber
+                    };
+                }
+
+                console.log(`Found ${results.length} polaroid products for order ${orderNumber}`);
+
+                // Log all results to see structure
+                console.log('=== RAW RESULTS DEBUG ===');
+                results.forEach((row, index) => {
+                    console.log(`Row ${index + 1}:`);
+                    console.log('  order_number:', row.order_number);
+                    console.log('  created_at:', row.created_at);
+                    console.log('  properties type:', typeof row.properties);
+                    console.log('  properties value:', row.properties);
+                    console.log('  properties keys:', row.properties ? Object.keys(row.properties) : 'null/undefined');
+                });
+                console.log('=== END RAW RESULTS DEBUG ===');
+
+                // Extract image URLs from properties and get order creation date
+                const imageUrls = [];
+                const orderCreatedAt = results.length > 0 ? results[0].created_at : null;
+                console.log(`\n=== ORDER DATE FOR URL PROCESSING ===`);
+                console.log(`Order created at: ${orderCreatedAt}`);
+                console.log(`=== END ORDER DATE DEBUG ===`);
+
+                results.forEach((row, rowIndex) => {
+                    console.log(`\n--- Processing row ${rowIndex + 1} ---`);
+
+                    if (row.properties) {
+                        try {
+                            // Check if properties is already an object or a string
+                            let properties;
+                            if (typeof row.properties === 'string') {
+                                console.log('Properties is string, parsing JSON...');
+                                properties = JSON.parse(row.properties);
+                            } else {
+                                console.log('Properties is already an object');
+                                properties = row.properties;
+                            }
+
+                            console.log('Parsed properties type:', typeof properties);
+                            console.log('Parsed properties:', properties);
+
+                            // Handle both array and object formats
+                            if (Array.isArray(properties)) {
+                                console.log('Properties is array format');
+                                properties.forEach((prop, propIndex) => {
+                                    console.log(`  Property ${propIndex + 1}:`, prop);
+                                    if (prop.name && (prop.name.toLowerCase().includes('image') || prop.name.toLowerCase().includes('polaroid')) && prop.value) {
+                                        console.log(`    → Found image URL: ${prop.value}`);
+                                        imageUrls.push(prop.value);
+                                    }
+                                });
+                            } else if (typeof properties === 'object') {
+                                console.log('Properties is object format');
+                                Object.keys(properties).forEach(key => {
+                                    console.log(`  Key: "${key}" → Value: "${properties[key]}"`);
+                                    if (key.toLowerCase().includes('image') && properties[key]) {
+                                        console.log(`    → Found image URL: ${properties[key]}`);
+                                        imageUrls.push(properties[key]);
+                                    }
+                                });
+                            } else {
+                                console.log('Properties is neither array nor object:', typeof properties);
+                            }
+                        } catch (error) {
+                            console.error('Error parsing properties:', error);
+                            console.log('Properties type:', typeof row.properties);
+                            console.log('Properties value:', row.properties);
+                        }
+                    } else {
+                        console.log('No properties found for this row');
+                    }
+                });
+
+                console.log(`\n=== FINAL RESULT ===`);
+                console.log(`Found ${imageUrls.length} image URLs total:`);
+                imageUrls.forEach((url, index) => {
+                    console.log(`  ${index + 1}. URL: ${url.substring(0, 100)}...`);
+                });
+
+                if (imageUrls.length === 0) {
+                    return {
+                        success: false,
+                        error: `No image URLs found in properties for order: ${orderNumber}`,
+                        orderNumber: orderNumber
+                    };
+                }
+
+                console.log(`Found ${imageUrls.length} image URLs for processing`);
+
+                // Process each image and save directly to main folder
+                const processedImages = [];
+                let successCount = 0;
+                let failureCount = 0;
+
+                for (let i = 0; i < imageUrls.length; i++) {
+                    const originalUrl = imageUrls[i];
+
+                    try {
+                        console.log(`\n=== PROCESSING IMAGE ${i + 1}/${imageUrls.length} ===`);
+                        console.log(`Original URL: ${originalUrl.substring(0, 100)}...`);
+
+                        // Extract direct image URL based on URL type
+                        const directImageUrl = await this.extractDirectImageUrl(originalUrl, orderCreatedAt);
+                        console.log(`Using URL for download: ${directImageUrl.substring(0, 100)}...`);
+
+                        // Download the image using blob method for test function
+                        const { stream, contentType } = await this.downloadImageAsBlob(directImageUrl);
+
+                        // Extract extension and MIME type from direct URL
+                        let extension = '.jpg'; // default fallback
+                        let correctMimeType = 'image/jpeg';
+
+                        try {
+                            const urlObj = new URL(directImageUrl);
+                            const pathname = urlObj.pathname;
+                            console.log(`URL pathname: ${pathname}`);
+
+                            // Extract extension from the file path
+                            const pathExtension = pathname.split('.').pop();
+                            if (pathExtension && pathExtension.length <= 5) {
+                                extension = '.' + pathExtension.toLowerCase();
+                                console.log(`Extracted extension from path: "${extension}"`);
+
+                                // Validate it's a known image extension
+                                const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp'];
+                                if (!validExtensions.includes(extension)) {
+                                    console.log(`Invalid extension "${extension}", falling back to .jpg`);
+                                    extension = '.jpg';
+                                }
+                            }
+
+                            // Set correct MIME type based on extension
+                            const mimeMap = {
+                                '.jpg': 'image/jpeg',
+                                '.jpeg': 'image/jpeg',
+                                '.png': 'image/png',
+                                '.gif': 'image/gif',
+                                '.webp': 'image/webp',
+                                '.heic': 'image/heic',
+                                '.heif': 'image/heif',
+                                '.bmp': 'image/bmp'
+                            };
+                            correctMimeType = mimeMap[extension] || 'image/jpeg';
+
+                        } catch (error) {
+                            console.log(`Error parsing URL for extension: ${error.message}`);
+                        }
+
+                        console.log(`Final: Extension: ${extension}, MIME: ${correctMimeType}`);
+
+                        const fileName = `${orderNumber}_${i + 1}${extension}`;
+
+                        console.log(`Uploading as: ${fileName} (${correctMimeType})`);
+
+                        // Upload directly to main folder for testing
+                        const uploadResult = await this.uploadImageToFolder(
+                            GOOGLE_DRIVE_CONFIG.mainFolderId,
+                            fileName,
+                            stream,
+                            correctMimeType
+                        );
+
+                        processedImages.push({
+                            imageIndex: i + 1,
+                            originalUrl: originalUrl,
+                            directUrl: directImageUrl,
+                            fileName: fileName,
+                            extension: extension,
+                            mimeType: correctMimeType,
+                            driveFileId: uploadResult.fileId,
+                            webViewLink: uploadResult.webViewLink,
+                            status: 'success'
+                        });
+
+                        successCount++;
+                        console.log(`Successfully uploaded: ${fileName}`);
+
+                    } catch (error) {
+                        console.error(`Failed to process image ${i + 1}:`, error.message);
+
+                        processedImages.push({
+                            imageIndex: i + 1,
+                            originalUrl: originalUrl,
+                            directUrl: null, // Set to null since it may not be defined if extraction failed
+                            fileName: null,
+                            extension: null,
+                            mimeType: null,
+                            driveFileId: null,
+                            webViewLink: null,
+                            status: 'failed',
+                            error: error.message
+                        });
+
+                        failureCount++;
+                    }
+
+                    // Small delay between uploads
+                    if (i < imageUrls.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                }
+
+                return {
+                    success: successCount > 0,
+                    orderNumber: orderNumber,
+                    summary: {
+                        totalImages: imageUrls.length,
+                        successfulUploads: successCount,
+                        failedUploads: failureCount
+                    },
+                    processedImages: processedImages
+                };
+
+            } finally {
+                await connection.end();
+            }
+
+        } catch (error) {
+            console.error('Error in test polaroid processing:', error.message);
+            return {
+                success: false,
+                error: error.message,
+                orderNumber: orderNumber
             };
         }
     }

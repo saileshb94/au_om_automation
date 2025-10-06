@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(node:*)",
+      "Bash(for dir in services utils middleware)",
+      "Bash(do echo \"Testing $dir/*.js...\")",
+      "Bash(for file in $dir/*.js)",
+      "Bash(do node -c \"$file\")",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(tree:*)",
+      "Bash(for file in scripts/*.js)",
+      "Bash(do echo \"Testing $file...\")",
+      "Bash(for file in utils/*.js services/*.js middleware/*.js routes/*.js)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

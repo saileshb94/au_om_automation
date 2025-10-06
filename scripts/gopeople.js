@@ -1,29 +1,31 @@
-// Import configuration
-const { 
-  LOCATION_ADDRESSES, 
-  LOCATION_TIMEZONES, 
-  GOPEOPLE_PARCEL_DEFAULTS, 
+// Import configuration and utilities
+const {
+  LOCATION_ADDRESSES,
+  LOCATION_TIMEZONES,
+  GOPEOPLE_PARCEL_DEFAULTS,
   GOPEOPLE_DELIVERY_DEFAULTS,
-  PICKUP_TIME_RULES 
-} = require('./config');
+  PICKUP_TIME_RULES
+} = require('../config');
+const TimezoneHelper = require('../utils/TimezoneHelper');
 
 const query = `
-SELECT 
-    so.id, 
-    so.process_status, 
-    sfl.location_name, 
+SELECT
+    so.id,
+    so.process_status,
+    so.shop_id,
+    sfl.location_name,
     sode.delivery_date,
     so.order_number,
     sode.building_name,
     sode.room_number,
     sode.residence_type,
-    sos.name, 
-    CASE 
-        WHEN sos.address2 IS NOT NULL AND sos.address2 != '' 
+    sos.name,
+    CASE
+        WHEN sos.address2 IS NOT NULL AND sos.address2 != ''
         THEN CONCAT(sos.address1, ', ', sos.address2)
         ELSE sos.address1
     END AS address,
-    sos.phone, 
+    sos.phone,
     sode.delivery_instructions,
     sos.city,
     sos.province,
@@ -31,39 +33,18 @@ SELECT
     so.email,
     sos.company
 FROM shopify_orders so
-LEFT JOIN 
+LEFT JOIN
     shopify_order_additional_details sode ON so.id = sode.order_id
-LEFT JOIN 
+LEFT JOIN
     shopify_order_shipping sos ON so.id = sos.order_id
-LEFT JOIN 
+LEFT JOIN
     shopify_fulfillment_locations sfl ON so.fulfillment_location_id = sfl.id
-WHERE so.shop_id = 10 
-    AND sode.is_same_day = 1
+WHERE sode.is_same_day = 1
 ORDER BY so.created_at DESC
 LIMIT 100;
 `;
 
-// Helper function to get the correct timezone offset based on date
-function getTimezoneOffset(location, date) {
-  const locationTz = LOCATION_TIMEZONES[location];
-  if (!locationTz) return '+1000'; // Default to AEST
-  
-  // For locations without daylight savings, return the standard offset
-  if (!locationTz.hasDaylightSavings) {
-    return locationTz.offset;
-  }
-  
-  // For locations with daylight savings (Melbourne, Sydney, Adelaide)
-  const dateObj = new Date(date);
-  const month = dateObj.getMonth() + 1; // getMonth() returns 0-11
-  
-  // Daylight savings in Australia typically runs from first Sunday in October to first Sunday in April
-  // This is a simplified check - for production, consider using a proper timezone library
-  const isDaylightSavings = month >= 10 || month <= 3;
-  
-  // Return appropriate offset based on daylight savings period
-  return isDaylightSavings ? locationTz.offset : locationTz.offsetStandard;
-}
+// Timezone functions moved to TimezoneHelper utility
 
 // Helper function to calculate the pickup time based on current time and available slots
 function calculatePickupTime(location, deliveryDate) {
@@ -75,31 +56,29 @@ function calculatePickupTime(location, deliveryDate) {
   }
   
   // Get current time in the location's timezone
-  const now = new Date();
-  const locationTime = new Date(now.toLocaleString("en-US", { timeZone: locationTz.timezone }));
-  
+  const locationTime = TimezoneHelper.getLocationTime(location);
+  if (!locationTime) return null;
+
   // Get the day of week for the delivery date
   const deliveryDateObj = new Date(deliveryDate);
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const dayOfWeek = dayNames[deliveryDateObj.getDay()];
-  
+
   // Get pickup slots for this location and day
   const locationRules = PICKUP_TIME_RULES[location];
   if (!locationRules || !locationRules[dayOfWeek]) {
     console.error(`No pickup rules for ${location} on ${dayOfWeek}`);
     return null;
   }
-  
+
   const slots = locationRules[dayOfWeek].slots;
   if (!slots || slots.length === 0) {
     console.error(`No pickup slots available for ${location} on ${dayOfWeek}`);
     return null;
   }
-  
+
   // Get current time in HH:MM format
-  const currentHours = locationTime.getHours().toString().padStart(2, '0');
-  const currentMinutes = locationTime.getMinutes().toString().padStart(2, '0');
-  const currentTimeStr = `${currentHours}:${currentMinutes}`;
+  const currentTimeStr = TimezoneHelper.formatTimeString(locationTime);
   
   // Check if delivery date is today
   const isToday = deliveryDateObj.toDateString() === locationTime.toDateString();
@@ -158,14 +137,34 @@ function transform(rawData, deliveryDate) {
     
     // Determine isCommercial based on residence_type
     const isCommercial = row.residence_type !== 'House/Unit/Apartment';
-    
+
+    // Determine ref prefix based on shop_id
+    let refPrefix = '';
+    if (row.shop_id === 10) {
+      refPrefix = 'LV';
+    } else if (row.shop_id === 6) {
+      refPrefix = 'BL';
+    }
+
+    // Determine store name based on shop_id
+    let storeName = 'NA';
+    if (row.shop_id === 10) {
+      storeName = 'LVLY';
+    } else if (row.shop_id === 6) {
+      storeName = 'Bloomeroo';
+    }
+
     // Format pickup date with correct timezone
     const pickupDateBase = deliveryDate || row.delivery_date;
-    const timezoneOffset = getTimezoneOffset(row.location_name, pickupDateBase);
+    const timezoneOffset = TimezoneHelper.getTimezoneOffset(row.location_name, pickupDateBase);
     const pickUpDate = `${pickupDateBase} ${pickupTime}:00${timezoneOffset}`;
-    
+
     transformedOrders.push({
       orderNumber: row.order_number, // Keep this for tracking
+      location_name: row.location_name, // Add location for GP Labels processing
+      delivery_date: deliveryDate || row.delivery_date, // Add delivery date for GP Labels processing
+      shop_id: row.shop_id, // Add shop_id for tracking
+      store: storeName, // Add store name for reporting
       apiPayload: {
         addressFrom: addressFrom,
         addressTo: {
@@ -188,7 +187,7 @@ function transform(rawData, deliveryDate) {
         pickUpDate: pickUpDate,
         description: GOPEOPLE_DELIVERY_DEFAULTS.description,
         note: row.delivery_instructions || '',
-        ref: `${GOPEOPLE_DELIVERY_DEFAULTS.refPrefix}${row.order_number}`,
+        ref: refPrefix ? `${refPrefix}${row.order_number}` : row.order_number,
         ref2: GOPEOPLE_DELIVERY_DEFAULTS.ref2,
         atl: GOPEOPLE_DELIVERY_DEFAULTS.atl,
         idCheckRequired: GOPEOPLE_DELIVERY_DEFAULTS.idCheckRequired,

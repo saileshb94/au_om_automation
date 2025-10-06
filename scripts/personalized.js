@@ -1,4 +1,5 @@
-// SIMPLE FIX: Create a separate query for personalized script that doesn't include the date filter
+// Personalized products script - processes jars, candles, plants, proseccos, and polaroids
+const PropertyExtractor = require('../utils/PropertyExtractor');
 
 const query = `
 SELECT 
@@ -22,9 +23,7 @@ LEFT JOIN
     shopify_order_products sop ON so.id = sop.order_id
 LEFT JOIN 
     shopify_products sp ON sp.variant_id = sop.variant_id
-WHERE so.shop_id=10 
-    AND so.process_status IS NULL  
-    AND (sp.tags LIKE '%product:personalisedjar%' OR sp.tags LIKE '%product:personalisedcandle%' OR sp.tags LIKE '%product:personalisedplant%' OR sp.tags LIKE '%product:personalisedbottle%' OR sp.tags LIKE '%product:imageupload%')
+WHERE (sp.tags LIKE '%product:personalisedjar%' OR sp.tags LIKE '%product:personalisedcandle%' OR sp.tags LIKE '%product:personalisedplant%' OR sp.tags LIKE '%product:personalisedbottle%' OR sp.tags LIKE '%product:imageupload%')
 ORDER BY sfl.location_name, so.created_at desc;
 `;
 
@@ -88,78 +87,7 @@ function transform(rawData) {
     };
 }
 
-function extractJarMessage(properties) {
-    try {
-        const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
-        
-        if (!Array.isArray(propertiesArray)) {
-            return null;
-        }
-        
-        // First look for 'Jar_Message'
-        for (const prop of propertiesArray) {
-            if (prop.name === 'Jar_Message' && prop.value) {
-                return prop.value;
-            }
-        }
-        
-        // Fallback to 'message'
-        for (const prop of propertiesArray) {
-            if (prop.name === 'message' && prop.value) {
-                return prop.value;
-            }
-        }
-        
-        return null;
-    } catch (error) {
-        console.error('Error extracting jar message:', error);
-        return null;
-    }
-}
-
-function extractCandlesPlantMessage(properties) {
-    try {
-        const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
-        
-        if (!Array.isArray(propertiesArray)) {
-            return null;
-        }
-        
-        // Look for 'message' only
-        for (const prop of propertiesArray) {
-            if (prop.name === 'message' && prop.value) {
-                return prop.value;
-            }
-        }
-        
-        return null;
-    } catch (error) {
-        console.error('Error extracting candles/plant message:', error);
-        return null;
-    }
-}
-
-function extractProseccoMessage(properties) {
-    try {
-        const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
-        
-        if (!Array.isArray(propertiesArray)) {
-            return null;
-        }
-        
-        // Look for 'message' only
-        for (const prop of propertiesArray) {
-            if (prop.name === 'message' && prop.value) {
-                return prop.value;
-            }
-        }
-        
-        return null;
-    } catch (error) {
-        console.error('Error extracting prosecco message:', error);
-        return null;
-    }
-}
+// Utility functions now moved to PropertyExtractor
 
 function processJarsData(rawData, validLocations) {
     console.log('Processing jars data - input length:', rawData.length);
@@ -177,7 +105,7 @@ function processJarsData(rawData, validLocations) {
     
     // Group messages by location and type (luxe vs classic/large)
     rawData.forEach((row, index) => {
-        const messageValue = extractJarMessage(row.properties);
+        const messageValue = PropertyExtractor.extractJarMessage(row.properties);
         
         if (messageValue && messageValue.trim() !== '' && row.location_name) {
             const locationName = row.location_name;
@@ -276,19 +204,13 @@ function processCandlesPlantsData(rawData, validLocations) {
     });
     
     rawData.forEach(order => {
-        const messageValue = extractCandlesPlantMessage(order.properties);
+        const messageValue = PropertyExtractor.extractCandlesPlantMessage(order.properties);
         
         if (messageValue && order.location_name) {
             const locationName = order.location_name;
             
             if (validLocations.includes(locationName)) {
-                let cleanMessage;
-                try {
-                    const parsedMessage = JSON.parse(messageValue);
-                    cleanMessage = parsedMessage.replace(/\s+/g, ' ').trim();
-                } catch (error) {
-                    cleanMessage = messageValue.replace(/\s+/g, ' ').trim();
-                }
+                const cleanMessage = PropertyExtractor.cleanMessage(messageValue);
                 
                 locationGroups[locationName].push(cleanMessage);
                 
@@ -340,19 +262,13 @@ function processProseccosData(rawData, validLocations) {
     });
     
     rawData.forEach(order => {
-        const messageValue = extractProseccoMessage(order.properties);
+        const messageValue = PropertyExtractor.extractProseccoMessage(order.properties);
         
         if (messageValue && order.location_name) {
             const locationName = order.location_name;
             
             if (validLocations.includes(locationName)) {
-                let cleanMessage;
-                try {
-                    const parsedMessage = JSON.parse(messageValue);
-                    cleanMessage = parsedMessage.replace(/\s+/g, ' ').trim();
-                } catch (error) {
-                    cleanMessage = messageValue.replace(/\s+/g, ' ').trim();
-                }
+                const cleanMessage = PropertyExtractor.cleanMessage(messageValue);
                 
                 locationGroups[locationName].push(cleanMessage);
                 
@@ -395,35 +311,7 @@ function processProseccosData(rawData, validLocations) {
     };
 }
 
-// Extract polaroid image URL from properties
-function extractPolaroidMessage(properties) {
-    try {
-        const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
-        
-        if (!Array.isArray(propertiesArray)) {
-            return null;
-        }
-        
-        // Look for 'Personalised Polaroid' first, then 'image'
-        for (const prop of propertiesArray) {
-            if (prop.name === 'Personalised Polaroid' && prop.value) {
-                return prop.value;
-            }
-        }
-        
-        // Fallback to 'image'
-        for (const prop of propertiesArray) {
-            if (prop.name === 'image' && prop.value) {
-                return prop.value;
-            }
-        }
-        
-        return null;
-    } catch (error) {
-        console.error('Error extracting polaroid message:', error);
-        return null;
-    }
-}
+// Polaroid processing - utility function moved to PropertyExtractor
 
 // Process polaroid data similar to other personalized products
 function processPolaroidData(rawData, validLocations) {
@@ -435,16 +323,17 @@ function processPolaroidData(rawData, validLocations) {
     });
     
     rawData.forEach(order => {
-        const imageUrl = extractPolaroidMessage(order.properties);
+        const imageUrl = PropertyExtractor.extractPolaroidMessage(order.properties);
         
         if (imageUrl && order.location_name && order.order_number) {
             const locationName = order.location_name;
             
             if (validLocations.includes(locationName)) {
-                // Store both the URL and order number for processing
+                // Store URL, order number, and created_at for processing
                 locationGroups[locationName].push({
                     url: imageUrl.trim(),
-                    order_number: order.order_number
+                    order_number: order.order_number,
+                    created_at: order.created_at
                 });
                 
                 // Add this order number to processed list since we used its image
@@ -465,6 +354,7 @@ function processPolaroidData(rawData, validLocations) {
             images.forEach((imageData, index) => {
                 batch[`polaroid_url_${index + 1}`] = imageData.url;
                 batch[`polaroid_order_${index + 1}`] = imageData.order_number;
+                batch[`polaroid_created_${index + 1}`] = imageData.created_at;
             });
             
             result[locationName] = {

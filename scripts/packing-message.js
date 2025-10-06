@@ -41,9 +41,7 @@ LEFT JOIN
     shopify_products sp ON sp.variant_id = sop.variant_id
 LEFT JOIN
     shopify_product_image spi ON spi.shopify_product_variant_id = sp.variant_id
-WHERE so.shop_id = 10 
-    AND so.process_status IS NULL  
-    AND sode.delivery_date = ?
+WHERE  sode.delivery_date = ?
 GROUP BY 
     so.id, 
     so.order_number, 
@@ -183,15 +181,15 @@ function transformPackingSlips(rawData, validLocations, finalBatchNumbers) {
 
 function transformMessageCards(rawData, validLocations, finalBatchNumbers) {
     console.log('Processing message cards data - input length:', rawData.length);
-    
+
     const locationGroups = {};
     const processedOrderNumbers = [];
-    
+
     // Initialize all locations
     validLocations.forEach(location => {
         locationGroups[location] = [];
     });
-    
+
     // Group message cards by location
     rawData.forEach((row, index) => {
         if (row.location_name && validLocations.includes(row.location_name)) {
@@ -203,36 +201,49 @@ function transformMessageCards(rawData, validLocations, finalBatchNumbers) {
                     note: row.note || null,
                     to: row.to_recipient || null
                 };
-                
+
                 locationGroups[row.location_name].push(messageCard);
-                
+
                 // Add to processed orders
                 if (row.order_number) {
                     processedOrderNumbers.push(row.order_number);
                 }
-                
+
                 if (index < 3) {
                     console.log(`Sample message card ${index}: location=${row.location_name}, order=${row.order_number}, note="${row.note ? row.note.substring(0, 30) : 'null'}..."`);
                 }
             }
         }
     });
-    
-    // Transform to final structure (no batching)
+
+    // Transform to final structure with batching (batch size 12)
     const result = {};
-    
+
     validLocations.forEach(locationName => {
         const messages = locationGroups[locationName] || [];
-        
+
         if (messages.length > 0) {
             console.log(`${locationName}: ${messages.length} message cards`);
-            
+
+            const batches = [];
+
+            for (let i = 0; i < messages.length; i += 12) {
+                const batchMessages = messages.slice(i, i + 12);
+                const batch = {};
+
+                batchMessages.forEach((messageCard, index) => {
+                    batch[`message_cards_data${index + 1}`] = messageCard;
+                });
+
+                batches.push(batch);
+            }
+
             result[locationName] = {
-                message_cards_data: messages
+                message_cards_data: batches
             };
         }
     });
-    
+
     return {
         data: result,
         orderNumbers: processedOrderNumbers

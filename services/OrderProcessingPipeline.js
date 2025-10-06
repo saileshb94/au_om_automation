@@ -1,0 +1,1449 @@
+const mysql = require('mysql2/promise');
+const BatchManagementService = require('./BatchManagementService');
+const ScriptExecutorService = require('./ScriptExecutorService');
+const GoPeopleApiService = require('./GoPeopleApiService');
+const AuspostApiService = require('./AuspostApiService');
+const PersonalizedApiService = require('./personalized-api-service');
+const GpLabelsApiService = require('./gp-labels-api-service');
+const AuspostLabelsApiService = require('./auspost-labels-api-service');
+const GoogleDriveService = require('../gdrive-service');
+const GoogleSheetsService = require('./GoogleSheetsService');
+const DateHelper = require('../utils/DateHelper');
+const ResponseFormatter = require('../utils/ResponseFormatter');
+
+class OrderProcessingPipeline {
+  constructor(requestParams, dbConfig, gopeopleConfig, auspostConfig, scriptsConfig) {
+    this.requestParams = requestParams;
+    this.dbConfig = dbConfig;
+    this.gopeopleConfig = gopeopleConfig;
+    this.auspostConfig = auspostConfig;
+    this.SCRIPTS_CONFIG = scriptsConfig;
+    this.batchService = new BatchManagementService();
+    this.gopeopleService = new GoPeopleApiService(gopeopleConfig.token, gopeopleConfig.url);
+    this.auspostService = new AuspostApiService(
+      auspostConfig.lvly,
+      auspostConfig.bloomeroo
+    );
+    this.personalizedApiService = new PersonalizedApiService();
+    this.gpLabelsApiService = new GpLabelsApiService();
+    this.auspostLabelsApiService = new AuspostLabelsApiService();
+    this.googleSheetsService = new GoogleSheetsService();
+  }
+
+  async execute() {
+    const overallStartTime = Date.now();
+    let connection;
+    
+    try {
+      console.log('Request parameters:', this.requestParams);
+      
+      // Parse dev_mode flags (5-digit format: gopeople, personalized_api, gp_labels_api, fos_update, google_sheets)
+      console.log(`\n🔍 === DEV MODE PARSING DEBUG ===`);
+      console.log(`Raw dev_mode parameter:`, this.requestParams.dev_mode);
+      console.log(`Type of dev_mode:`, typeof this.requestParams.dev_mode);
+      console.log(`Length of dev_mode:`, this.requestParams.dev_mode?.length);
+
+      if (this.requestParams.dev_mode) {
+        console.log(`Character breakdown:`);
+        for (let i = 0; i < this.requestParams.dev_mode.length; i++) {
+          console.log(`  dev_mode[${i}]: "${this.requestParams.dev_mode[i]}" (${typeof this.requestParams.dev_mode[i]})`);
+        }
+      }
+
+      const executeGoPeopleApiCalls_flag = this.requestParams.dev_mode[0] === '1';
+      const executePersonalizedApiCalls_flag = this.requestParams.dev_mode[1] === '1';
+      const executeGpLabelsApiCalls_flag = this.requestParams.dev_mode[2] === '1';
+      const executeFosUpdate_flag = this.requestParams.dev_mode[3] === '1';
+      const executeGoogleSheetsWrite_flag = this.requestParams.dev_mode[4] === '1';
+
+      console.log(`\nFlag assignments:`);
+      console.log(`  dev_mode[0] = "${this.requestParams.dev_mode[0]}" → executeGoPeopleApiCalls_flag: ${executeGoPeopleApiCalls_flag}`);
+      console.log(`  dev_mode[1] = "${this.requestParams.dev_mode[1]}" → executePersonalizedApiCalls_flag: ${executePersonalizedApiCalls_flag}`);
+      console.log(`  dev_mode[2] = "${this.requestParams.dev_mode[2]}" → executeGpLabelsApiCalls_flag: ${executeGpLabelsApiCalls_flag}`);
+      console.log(`  dev_mode[3] = "${this.requestParams.dev_mode[3]}" → executeFosUpdate_flag: ${executeFosUpdate_flag}`);
+      console.log(`  dev_mode[4] = "${this.requestParams.dev_mode[4]}" → executeGoogleSheetsWrite_flag: ${executeGoogleSheetsWrite_flag}`);
+      console.log(`=== END DEV MODE PARSING DEBUG ===\n`);
+
+      console.log(`Dev mode flags - GoPeople API: ${executeGoPeopleApiCalls_flag}, Personalized API: ${executePersonalizedApiCalls_flag}, GP Labels API: ${executeGpLabelsApiCalls_flag}, FOS Update: ${executeFosUpdate_flag}, Google Sheets: ${executeGoogleSheetsWrite_flag}`);
+      
+      // Format delivery date for batch management
+      const deliveryDate = DateHelper.formatDate(this.requestParams.date);
+      console.log(`Batch Management: Using delivery date: ${deliveryDate}`);
+      
+      // Step 0: Get current batch numbers from Firestore
+      console.log('Batch Management: Fetching current batch numbers...');
+      const currentBatchNumbers = await this.batchService.getBatchNumbers(deliveryDate);
+      
+      console.log('Starting database connection...');
+      connection = await mysql.createConnection(this.dbConfig);
+      const scriptExecutor = new ScriptExecutorService(connection);
+
+      // Initialize tracking variables
+      const results = {};
+      const executionDetails = {};
+      let successCount = 0;
+      let failureCount = 0;
+      let orderTrackingArray = [];
+      let finalBatchNumbers = { ...currentBatchNumbers };
+      let folderPreCreationResults = null;
+      
+      // Step 1: Execute orders script first
+      console.log('Executing orders script...');
+      const ordersResult = await scriptExecutor.executeScript('orders', this.SCRIPTS_CONFIG.orders, this.requestParams);
+      
+      results['orders'] = ordersResult.data;
+      const { data: ordersData, processedOrderNumbers: ordersProcessedOrderNumbers, locationSummary, scriptKey: ordersScriptKey, ...ordersExecutionInfo } = ordersResult;
+      executionDetails['orders'] = ordersExecutionInfo;
+      
+      if (ordersResult.success) {
+        successCount++;
+        
+        // Step 1.5: Update batch numbers based on location summary
+        // console.log('Batch Management: Updating batch numbers based on order counts...');
+        // finalBatchNumbers = await this.batchService.updateBatchNumbers(deliveryDate, locationSummary, currentBatchNumbers);
+        
+        // Initialize tracking array with order numbers, delivery date, locations, and batch numbers
+        if (ordersResult.data && Array.isArray(ordersResult.data) && ordersResult.data.length > 0) {
+          orderTrackingArray = ordersResult.data.map(orderData => ({
+            order_number: orderData.order_number,
+            delivery_date: deliveryDate,
+            location: orderData.location,
+            batch: finalBatchNumbers[orderData.location],
+            gopeople_status: false,
+            gopeople_error: null,
+            auspost_status: false,
+            auspost_error: null,
+            personalized_status: false,
+            packing_slip_status: false,
+            message_cards_status: false,
+            updateProcessingStatus: false
+          }));
+          console.log(`Initialized tracking array with ${orderTrackingArray.length} orders`);
+        }
+      } else {
+        failureCount++;
+      }
+      
+      // Step 2: Route to logistics provider based on is_same_day parameter
+      console.log(`\n🚚 === LOGISTICS PROVIDER ROUTING ===`);
+      console.log(`is_same_day parameter: ${this.requestParams.is_same_day} (${this.requestParams.is_same_day === '1' ? 'GoPeople' : 'Auspost'})`);
+
+      let logisticsResults = null;
+
+      if (this.requestParams.is_same_day === '1') {
+        console.log(`✅ Routing to GoPeople`);
+        console.log(`=== END LOGISTICS ROUTING ===\n`);
+
+        const { gopeopleResults, newSuccessCount, newFailureCount } = await this.executeGoPeopleStep(
+          ordersResult, executeGoPeopleApiCalls_flag, scriptExecutor, results, executionDetails, orderTrackingArray
+        );
+        logisticsResults = gopeopleResults;
+        successCount += newSuccessCount;
+        failureCount += newFailureCount;
+
+        // Step 2.5: Update batch numbers based on successful gopeople orders
+        finalBatchNumbers = await this.updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, 'gopeople');
+      } else {
+        console.log(`✅ Routing to Auspost`);
+        console.log(`=== END LOGISTICS ROUTING ===\n`);
+
+        const { auspostResults, newSuccessCount, newFailureCount } = await this.executeAuspostStep(
+          ordersResult, executeGoPeopleApiCalls_flag, scriptExecutor, results, executionDetails, orderTrackingArray
+        );
+        logisticsResults = auspostResults;
+        successCount += newSuccessCount;
+        failureCount += newFailureCount;
+
+        // Step 2.5: Update batch numbers based on successful auspost orders
+        finalBatchNumbers = await this.updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, 'auspost');
+      }
+
+      // Step 2.75: Pre-create folder structure for successful logistics orders
+      folderPreCreationResults = await this.preCreateFolders(orderTrackingArray, deliveryDate, finalBatchNumbers);
+
+      // Step 2.8: Process Labels (GP or AusPost based on is_same_day) after folder creation
+      let labelsApiResults = null;
+      if (this.requestParams.is_same_day === '1') {
+        // GoPeople labels for same-day orders
+        labelsApiResults = await this.executeGpLabelsStep(executeGpLabelsApiCalls_flag, logisticsResults, results, executionDetails, finalBatchNumbers);
+      } else {
+        // AusPost labels for non-same-day orders
+        labelsApiResults = await this.executeAuspostLabelsStep(executeGpLabelsApiCalls_flag, logisticsResults, results, executionDetails, finalBatchNumbers);
+      }
+      
+      // Step 3: Execute personalized and packing-message scripts
+      const { personalizedResults, packingResults } = await this.executePersonalizedAndPackingSteps(
+        orderTrackingArray, scriptExecutor, results, executionDetails, finalBatchNumbers, deliveryDate
+      );
+      successCount += personalizedResults.successCount;
+      failureCount += personalizedResults.failureCount;
+      
+      // Step 3.5: Process polaroid images to Google Drive
+      const polaroidProcessingResults = await this.processPolaroidImages(results, deliveryDate, finalBatchNumbers);
+
+      // Step 3.75: Execute Personalized API service
+      const personalizedApiResults = await this.executePersonalizedApiStep(
+        executePersonalizedApiCalls_flag, results, executionDetails
+      );
+      successCount += personalizedApiResults.successCount;
+      failureCount += personalizedApiResults.failureCount;
+
+      // Step 3.8: Update tracking array with correct API success status
+      this.updateTrackingArrayWithApiResults(orderTrackingArray, personalizedApiResults);
+
+      // Step 4: Execute FOS_update script
+      const fosResults = await this.executeFosUpdateStep(
+        orderTrackingArray, executeFosUpdate_flag, scriptExecutor, results, executionDetails
+      );
+      successCount += fosResults.successCount;
+      failureCount += fosResults.failureCount;
+
+      // Step 5: Write to Google Sheets
+      const googleSheetsResults = await this.executeGoogleSheetsWriteStep(
+        orderTrackingArray, executeGoogleSheetsWrite_flag, results, executionDetails
+      );
+      successCount += googleSheetsResults.successCount;
+      failureCount += googleSheetsResults.failureCount;
+
+      const overallExecutionTime = Date.now() - overallStartTime;
+
+      console.log(`All scripts completed. Success: ${successCount}, Failed/Skipped: ${failureCount}`);
+      console.log(`Order tracking array final state:`, orderTrackingArray.length, 'orders');
+      console.log('Final batch numbers used:', finalBatchNumbers);
+      
+      return ResponseFormatter.formatResponse({
+        success: successCount > 0,
+        successCount,
+        failureCount,
+        overallExecutionTime,
+        requestParams: this.requestParams,
+        orderTrackingArray,
+        deliveryDate,
+        currentBatchNumbers,
+        finalBatchNumbers,
+        locationSummary,
+        executionDetails,
+        results,
+        folderPreCreationResults,
+        polaroidProcessingResults,
+        personalizedApiResults,
+        labelsApiResults,
+        googleSheetsResults,
+        SCRIPTS_CONFIG: this.SCRIPTS_CONFIG,
+        isZapierRequest: this.requestParams.source === 'zapier'
+      });
+
+    } finally {
+      if (connection) {
+        await connection.end();
+        console.log('Database connection closed');
+      }
+    }
+  }
+
+  async executeGoPeopleStep(ordersResult, executeGoPeopleApiCalls_flag, scriptExecutor, results, executionDetails, orderTrackingArray) {
+    let gopeopleApiResults = null;
+    let successCount = 0;
+    let failureCount = 0;
+    
+    if (ordersResult.success && ordersResult.data && Array.isArray(ordersResult.data) && ordersResult.data.length > 0) {
+      const orderNumbers = ordersResult.data.map(orderData => orderData.order_number);
+      console.log(`Orders script returned ${orderNumbers.length} order numbers.`);
+      
+      console.log(`\n🚀 === GOPEOPLE API EXECUTION DECISION ===`);
+      console.log(`📊 executeGoPeopleApiCalls_flag: ${executeGoPeopleApiCalls_flag} (dev_mode[0] = '${this.requestParams.dev_mode[0]}')`);
+      console.log(`📋 Orders available for processing: ${orderNumbers.length}`);
+
+      if (executeGoPeopleApiCalls_flag) {
+        console.log(`✅ Decision: EXECUTING GoPeople API calls`);
+        console.log(`=== END GOPEOPLE API DECISION ===\n`);
+
+        const extendedParams = { ...this.requestParams, orderNumbers: orderNumbers };
+
+        console.log('Executing gopeople script...');
+        const gopeopleResult = await scriptExecutor.executeScript('gopeople', this.SCRIPTS_CONFIG.gopeople, extendedParams);
+        
+        if (gopeopleResult.success) {
+          if (gopeopleResult.data && gopeopleResult.data.length > 0) {
+            console.log(`Making GoPeople API calls for ${gopeopleResult.data.length} orders...`);
+            gopeopleApiResults = await this.gopeopleService.executeGoPeopleApiCalls(gopeopleResult.data);
+            
+            gopeopleApiResults.summary.skipped = gopeopleResult.skippedCount;
+            gopeopleApiResults.summary.totalOrders = gopeopleResult.recordCount;
+            
+            results['gopeople'] = gopeopleApiResults;
+            
+            // Update tracking array with gopeople results
+            gopeopleApiResults.results.forEach(apiResult => {
+              const trackingEntry = orderTrackingArray.find(entry => entry.order_number === apiResult.orderNumber);
+              if (trackingEntry) {
+                trackingEntry.gopeople_status = apiResult.success;
+                trackingEntry.gopeople_error = apiResult.success ? null : apiResult.error;
+              }
+            });
+            
+            const { data: gopeopleData, processedOrderNumbers: gopeopleProcessedOrderNumbers, scriptKey: gopeopleScriptKey, ...gopeopleExecutionInfo } = gopeopleResult;
+            executionDetails['gopeople'] = {
+              ...gopeopleExecutionInfo,
+              apiCallsSummary: gopeopleApiResults.summary,
+              devModeSkipped: false
+            };
+            
+            successCount++;
+          } else if (gopeopleResult.skippedCount > 0) {
+            // Handle all orders skipped due to cutoff
+            this.handleAllOrdersSkipped(gopeopleResult, results, executionDetails, orderTrackingArray);
+            successCount++;
+          } else {
+            this.handleGoPeopleFailure(gopeopleResult, results, executionDetails, orderTrackingArray, 'No data returned');
+            failureCount++;
+          }
+        } else {
+          this.handleGoPeopleFailure(gopeopleResult, results, executionDetails, orderTrackingArray, 'GoPeople script failed');
+          failureCount++;
+        }
+      } else {
+        console.log(`❌ Decision: SKIPPING GoPeople API calls (dev_mode flag disabled)`);
+        console.log(`=== END GOPEOPLE API DECISION ===\n`);
+        this.handleGoPeopleSkipped(results, executionDetails, orderTrackingArray, 'Skipped due to dev_mode flag');
+        failureCount++;
+      }
+    } else {
+      this.handleGoPeopleSkipped(results, executionDetails, orderTrackingArray, 'No orders found to process');
+      failureCount++;
+    }
+    
+    return { gopeopleResults: gopeopleApiResults, newSuccessCount: successCount, newFailureCount: failureCount };
+  }
+
+  async executeAuspostStep(ordersResult, executeAuspostApiCalls_flag, scriptExecutor, results, executionDetails, orderTrackingArray) {
+    let auspostApiResults = null;
+    let successCount = 0;
+    let failureCount = 0;
+
+    if (ordersResult.success && ordersResult.data && Array.isArray(ordersResult.data) && ordersResult.data.length > 0) {
+      const orderNumbers = ordersResult.data.map(orderData => orderData.order_number);
+      console.log(`Orders script returned ${orderNumbers.length} order numbers for Auspost.`);
+
+      console.log(`\n📮 === AUSPOST API EXECUTION DECISION ===`);
+      console.log(`📊 executeAuspostApiCalls_flag: ${executeAuspostApiCalls_flag} (dev_mode[0] = '${this.requestParams.dev_mode[0]}')`);
+      console.log(`📋 Orders available for processing: ${orderNumbers.length}`);
+
+      if (executeAuspostApiCalls_flag) {
+        console.log(`✅ Decision: EXECUTING Auspost API calls`);
+        console.log(`=== END AUSPOST API DECISION ===\n`);
+
+        const extendedParams = { ...this.requestParams, orderNumbers: orderNumbers };
+
+        console.log('Executing auspost script...');
+        const auspostResult = await scriptExecutor.executeScript('auspost', this.SCRIPTS_CONFIG.auspost, extendedParams);
+
+        if (auspostResult.success) {
+          if (auspostResult.data && auspostResult.data.length > 0) {
+            console.log(`Making Auspost API calls for ${auspostResult.data.length} orders...`);
+            auspostApiResults = await this.auspostService.executeAuspostApiCalls(auspostResult.data);
+
+            auspostApiResults.summary.skipped = auspostResult.skippedCount;
+            auspostApiResults.summary.totalOrders = auspostResult.recordCount;
+
+            results['auspost'] = auspostApiResults;
+
+            // Update tracking array with auspost results
+            auspostApiResults.results.forEach(apiResult => {
+              const trackingEntry = orderTrackingArray.find(entry => entry.order_number === apiResult.orderNumber);
+              if (trackingEntry) {
+                trackingEntry.auspost_status = apiResult.success;
+                trackingEntry.auspost_error = apiResult.success ? null : apiResult.error;
+              }
+            });
+
+            const { data: auspostData, processedOrderNumbers: auspostProcessedOrderNumbers, scriptKey: auspostScriptKey, ...auspostExecutionInfo } = auspostResult;
+            executionDetails['auspost'] = {
+              ...auspostExecutionInfo,
+              apiCallsSummary: auspostApiResults.summary,
+              devModeSkipped: false
+            };
+
+            successCount++;
+          } else if (auspostResult.skippedCount > 0) {
+            // Handle all orders skipped due to cutoff
+            this.handleAllOrdersSkippedAuspost(auspostResult, results, executionDetails, orderTrackingArray);
+            successCount++;
+          } else {
+            this.handleAuspostFailure(auspostResult, results, executionDetails, orderTrackingArray, 'No data returned');
+            failureCount++;
+          }
+        } else {
+          this.handleAuspostFailure(auspostResult, results, executionDetails, orderTrackingArray, 'Auspost script failed');
+          failureCount++;
+        }
+      } else {
+        console.log(`❌ Decision: SKIPPING Auspost API calls (dev_mode flag disabled)`);
+        console.log(`=== END AUSPOST API DECISION ===\n`);
+        this.handleAuspostSkipped(results, executionDetails, orderTrackingArray, 'Skipped due to dev_mode flag');
+        failureCount++;
+      }
+    } else {
+      this.handleAuspostSkipped(results, executionDetails, orderTrackingArray, 'No orders found to process');
+      failureCount++;
+    }
+
+    return { auspostResults: auspostApiResults, newSuccessCount: successCount, newFailureCount: failureCount };
+  }
+
+  handleAllOrdersSkipped(gopeopleResult, results, executionDetails, orderTrackingArray) {
+    console.log(`All ${gopeopleResult.skippedCount} orders were past cutoff time. No API calls made.`);
+    
+    results['gopeople'] = {
+      results: [],
+      summary: {
+        total: 0,
+        successful: 0,
+        failed: 0,
+        processed: 0,
+        skipped: gopeopleResult.skippedCount,
+        totalOrders: gopeopleResult.recordCount,
+        message: 'All orders past cutoff time'
+      }
+    };
+    
+    const { data: gopeopleData, processedOrderNumbers: gopeopleProcessedOrderNumbers, scriptKey: gopeopleScriptKey, ...gopeopleExecutionInfo } = gopeopleResult;
+    executionDetails['gopeople'] = {
+      ...gopeopleExecutionInfo,
+      apiCallsSummary: {
+        total: 0,
+        successful: 0,
+        failed: 0,
+        skipped: gopeopleResult.skippedCount,
+        message: 'All orders past cutoff time'
+      }
+    };
+    
+    orderTrackingArray.forEach(entry => {
+      entry.gopeople_error = 'Order past cutoff time';
+    });
+  }
+
+  handleGoPeopleFailure(gopeopleResult, results, executionDetails, orderTrackingArray, errorMessage) {
+    results['gopeople'] = null;
+    
+    const { data: gopeopleData, processedOrderNumbers: gopeopleProcessedOrderNumbers, scriptKey: gopeopleScriptKey, ...gopeopleExecutionInfo } = gopeopleResult;
+    executionDetails['gopeople'] = gopeopleExecutionInfo;
+    
+    orderTrackingArray.forEach(entry => {
+      entry.gopeople_error = errorMessage;
+    });
+  }
+
+  handleGoPeopleSkipped(results, executionDetails, orderTrackingArray, reason) {
+    console.log(`Dev mode: Skipping GoPeople script execution entirely`);
+
+    results['gopeople'] = null;
+    executionDetails['gopeople'] = {
+      scriptKey: 'gopeople',
+      name: 'GoPeople Logistics API',
+      success: false,
+      skipped: true,
+      reason: reason,
+      devModeSkipped: true,
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+
+    orderTrackingArray.forEach(entry => {
+      entry.gopeople_error = reason;
+    });
+  }
+
+  handleAllOrdersSkippedAuspost(auspostResult, results, executionDetails, orderTrackingArray) {
+    console.log(`All ${auspostResult.skippedCount} Auspost orders were past cutoff time. No API calls made.`);
+
+    results['auspost'] = {
+      results: [],
+      summary: {
+        total: 0,
+        successful: 0,
+        failed: 0,
+        processed: 0,
+        skipped: auspostResult.skippedCount,
+        totalOrders: auspostResult.recordCount,
+        message: 'All orders past cutoff time'
+      }
+    };
+
+    const { data: auspostData, processedOrderNumbers: auspostProcessedOrderNumbers, scriptKey: auspostScriptKey, ...auspostExecutionInfo } = auspostResult;
+    executionDetails['auspost'] = {
+      ...auspostExecutionInfo,
+      apiCallsSummary: {
+        total: 0,
+        successful: 0,
+        failed: 0,
+        skipped: auspostResult.skippedCount,
+        message: 'All orders past cutoff time'
+      }
+    };
+
+    orderTrackingArray.forEach(entry => {
+      entry.auspost_error = 'Order past cutoff time';
+    });
+  }
+
+  handleAuspostFailure(auspostResult, results, executionDetails, orderTrackingArray, errorMessage) {
+    results['auspost'] = null;
+
+    const { data: auspostData, processedOrderNumbers: auspostProcessedOrderNumbers, scriptKey: auspostScriptKey, ...auspostExecutionInfo } = auspostResult;
+    executionDetails['auspost'] = auspostExecutionInfo;
+
+    orderTrackingArray.forEach(entry => {
+      entry.auspost_error = errorMessage;
+    });
+  }
+
+  handleAuspostSkipped(results, executionDetails, orderTrackingArray, reason) {
+    console.log(`Dev mode: Skipping Auspost script execution entirely`);
+
+    results['auspost'] = null;
+    executionDetails['auspost'] = {
+      scriptKey: 'auspost',
+      name: 'Auspost Logistics API',
+      success: false,
+      skipped: true,
+      reason: reason,
+      devModeSkipped: true,
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+
+    orderTrackingArray.forEach(entry => {
+      entry.auspost_error = reason;
+    });
+  }
+
+  async updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, provider = 'gopeople') {
+    if (orderTrackingArray.length > 0) {
+      const statusField = provider === 'gopeople' ? 'gopeople_status' : 'auspost_status';
+
+      const successfulLogisticsLocationCounts = orderTrackingArray.reduce((counts, entry) => {
+        if (entry[statusField] === true && entry.location) {
+          counts[entry.location] = (counts[entry.location] || 0) + 1;
+        }
+        return counts;
+      }, {});
+
+      console.log(`Batch Management: Updating batch numbers based on successful ${provider} orders:`, successfulLogisticsLocationCounts);
+      const finalBatchNumbers = await this.batchService.updateBatchNumbers(deliveryDate, successfulLogisticsLocationCounts, currentBatchNumbers);
+
+      orderTrackingArray.forEach(entry => {
+        if (entry.location && finalBatchNumbers[entry.location] !== undefined) {
+          entry.batch = finalBatchNumbers[entry.location];
+        }
+      });
+
+      console.log(`Updated tracking array with final batch numbers for ${orderTrackingArray.length} orders`);
+      return finalBatchNumbers;
+    } else {
+      console.log('Batch Management: No batch updates - no orders to process');
+      return { ...currentBatchNumbers };
+    }
+  }
+
+  async preCreateFolders(orderTrackingArray, deliveryDate, finalBatchNumbers) {
+    if (orderTrackingArray.length > 0) {
+      const successfulLogisticsOrders = orderTrackingArray.filter(entry =>
+        entry.gopeople_status === true || entry.auspost_status === true
+      );
+
+      if (successfulLogisticsOrders.length > 0) {
+        console.log('=== Starting Google Drive folder pre-creation ===');
+        console.log(`Pre-creating folders for ${successfulLogisticsOrders.length} successful logistics orders`);
+        
+        try {
+          const gdriveService = new GoogleDriveService();
+
+          const folderPreCreationResults = await gdriveService.preCreateFolderStructure(
+            successfulLogisticsOrders,
+            deliveryDate,
+            finalBatchNumbers
+          );
+          
+          console.log('Folder pre-creation completed:', folderPreCreationResults.summary);
+          
+          if (folderPreCreationResults.failedFolders.length > 0) {
+            console.error('Failed folder creations:', folderPreCreationResults.failedFolders);
+          }
+          
+          return folderPreCreationResults;
+        } catch (error) {
+          console.error('Error during folder pre-creation:', error.message);
+          return {
+            success: false,
+            error: error.message,
+            summary: {
+              totalLocations: 0,
+              successfulCreations: 0,
+              failedCreations: 0
+            }
+          };
+        } finally {
+          console.log('=== Folder pre-creation step completed ===');
+        }
+      } else {
+        console.log('No successful logistics orders, skipping folder pre-creation');
+      }
+    }
+    return null;
+  }
+
+  async executePersonalizedAndPackingSteps(orderTrackingArray, scriptExecutor, results, executionDetails, finalBatchNumbers, deliveryDate) {
+    let successCount = 0;
+    let failureCount = 0;
+
+    if (orderTrackingArray.length > 0) {
+      const successfulLogisticsOrders = orderTrackingArray
+        .filter(entry => entry.gopeople_status === true || entry.auspost_status === true)
+        .map(entry => entry.order_number);
+
+      if (successfulLogisticsOrders.length > 0) {
+        const extendedParams = { ...this.requestParams, orderNumbers: successfulLogisticsOrders };
+
+        console.log(`Executing personalized script with ${successfulLogisticsOrders.length} orders that passed logistics validation...`);
+        const personalizedResult = await scriptExecutor.executeScript('personalized', this.SCRIPTS_CONFIG.personalized, extendedParams);
+        
+        if (personalizedResult.success) {
+          // Add batch information to personalized data
+          let personalizedDataWithBatch = this.addBatchInfoToData(personalizedResult.data, finalBatchNumbers, deliveryDate);
+          const tempPersonalizedData = personalizedDataWithBatch;
+          
+          const { data: personalizedData, processedOrderNumbers: personalizedProcessedOrderNumbers, scriptKey: personalizedScriptKey, ...personalizedExecutionInfo } = personalizedResult;
+          executionDetails['personalized'] = personalizedExecutionInfo;
+          
+          // Update tracking array (initially false, will be corrected after API calls)
+          this.updateTrackingArrayPersonalized(personalizedProcessedOrderNumbers, orderTrackingArray, false);
+          successCount++;
+          
+          // Execute packing slip and message cards processing
+          console.log(`Executing packing-message script with ${successfulLogisticsOrders.length} orders...`);
+          const packingMessageParams = { ...this.requestParams, orderNumbers: successfulLogisticsOrders, finalBatchNumbers: finalBatchNumbers };
+          
+          const packingMessageResult = await scriptExecutor.executeScript('packing_message', this.SCRIPTS_CONFIG.packing_message, packingMessageParams);
+          
+          if (packingMessageResult.success) {
+            let packingMessageDataWithBatch = this.addBatchInfoToPackingData(packingMessageResult.data, finalBatchNumbers, deliveryDate);
+            
+            const combinedData = ResponseFormatter.combinePersonalizedAndPackingMessage(tempPersonalizedData, packingMessageDataWithBatch);
+            results['personalized_packingslip_notes'] = combinedData;
+            
+            const { data: packingMessageData, processedOrderNumbers: packingMessageProcessedOrderNumbers, scriptKey: packingMessageScriptKey, ...packingMessageExecutionInfo } = packingMessageResult;
+            executionDetails['packing_message'] = packingMessageExecutionInfo;
+            
+            this.updateTrackingArrayPacking(packingMessageProcessedOrderNumbers, packingMessageDataWithBatch, orderTrackingArray, false);
+            successCount++;
+          } else {
+            results['personalized_packingslip_notes'] = tempPersonalizedData;
+            
+            const { data: packingMessageData, processedOrderNumbers: packingMessageProcessedOrderNumbers, scriptKey: packingMessageScriptKey, ...packingMessageExecutionInfo } = packingMessageResult;
+            executionDetails['packing_message'] = packingMessageExecutionInfo;
+            failureCount++;
+          }
+        } else {
+          this.handlePersonalizedFailure(personalizedResult, results, executionDetails);
+          failureCount += 2; // Both personalized and packing-message failed
+        }
+      } else {
+        this.handleNoOrdersForPersonalized(results, executionDetails, 'No orders passed logistics validation');
+        failureCount += 2;
+      }
+    } else {
+      this.handleNoOrdersForPersonalized(results, executionDetails, 'No orders found to process');
+      failureCount += 2;
+    }
+    
+    return { personalizedResults: { successCount, failureCount }, packingResults: {} };
+  }
+
+  addBatchInfoToData(data, finalBatchNumbers, deliveryDate) {
+    if (Array.isArray(data)) {
+      return data.map(locationEntry => {
+        if (typeof locationEntry === 'string') {
+          const parsed = JSON.parse(locationEntry);
+          if (parsed.location && finalBatchNumbers[parsed.location] !== undefined) {
+            parsed.batch = finalBatchNumbers[parsed.location];
+          }
+          // Add delivery_date in yyyy-mm-dd format
+          if (deliveryDate) {
+            parsed.delivery_date = deliveryDate;
+          }
+          return JSON.stringify(parsed);
+        } else if (typeof locationEntry === 'object' && locationEntry.location) {
+          if (finalBatchNumbers[locationEntry.location] !== undefined) {
+            locationEntry.batch = finalBatchNumbers[locationEntry.location];
+          }
+          // Add delivery_date in yyyy-mm-dd format
+          if (deliveryDate) {
+            locationEntry.delivery_date = deliveryDate;
+          }
+          return JSON.stringify(locationEntry);
+        }
+        return JSON.stringify(locationEntry);
+      });
+    }
+    return data;
+  }
+
+  addBatchInfoToPackingData(data, finalBatchNumbers, deliveryDate) {
+    if (Array.isArray(data)) {
+      return data.map(locationEntry => {
+        if (typeof locationEntry === 'object' && locationEntry.location) {
+          if (finalBatchNumbers[locationEntry.location] !== undefined) {
+            locationEntry.batch = finalBatchNumbers[locationEntry.location];
+            locationEntry.shop_id = 10;
+          }
+          // Ensure delivery_date is in yyyy-mm-dd format
+          if (deliveryDate) {
+            locationEntry.delivery_date = deliveryDate;
+          }
+        }
+        return locationEntry;
+      });
+    }
+    return data;
+  }
+
+  updateTrackingArrayPersonalized(processedOrderNumbers, orderTrackingArray, personalizedApiSuccess = false) {
+    if (processedOrderNumbers && processedOrderNumbers.length > 0) {
+      processedOrderNumbers.forEach(orderNumber => {
+        const trackingEntry = orderTrackingArray.find(entry => entry.order_number === orderNumber);
+        if (trackingEntry) {
+          // Only set to true if both script succeeded AND API calls succeeded
+          trackingEntry.personalized_status = personalizedApiSuccess;
+        }
+      });
+      console.log(`Updated personalized_status for ${processedOrderNumbers.length} orders: ${personalizedApiSuccess ? 'SUCCESS' : 'API CALLS SKIPPED'}`);
+    }
+  }
+
+  updateTrackingArrayPacking(processedOrderNumbers, packingMessageDataWithBatch, orderTrackingArray, personalizedApiSuccess = false) {
+    if (processedOrderNumbers && processedOrderNumbers.length > 0) {
+      processedOrderNumbers.forEach(orderNumber => {
+        const trackingEntry = orderTrackingArray.find(entry => entry.order_number === orderNumber);
+        if (trackingEntry) {
+          if (personalizedApiSuccess) {
+            // Only check for actual data if API calls succeeded
+            const hasPackingSlip = packingMessageDataWithBatch.some(locationData =>
+              locationData.packing_slips_data &&
+              locationData.packing_slips_data.some(order => order.order_number === orderNumber)
+            );
+            const hasMessageCard = packingMessageDataWithBatch.some(locationData =>
+              locationData.message_cards_data &&
+              locationData.message_cards_data.some(message => message.order_number === orderNumber)
+            );
+
+            trackingEntry.packing_slip_status = hasPackingSlip;
+            trackingEntry.message_cards_status = hasMessageCard;
+          } else {
+            // If API calls were skipped, set status to false
+            trackingEntry.packing_slip_status = false;
+            trackingEntry.message_cards_status = false;
+          }
+        }
+      });
+      console.log(`Updated packing slip and message cards status for ${processedOrderNumbers.length} orders: ${personalizedApiSuccess ? 'SUCCESS' : 'API CALLS SKIPPED'}`);
+    }
+  }
+
+  handlePersonalizedFailure(personalizedResult, results, executionDetails) {
+    results['personalized_packingslip_notes'] = null;
+    
+    const { data: personalizedData, processedOrderNumbers: personalizedProcessedOrderNumbers, scriptKey: personalizedScriptKey, ...personalizedExecutionInfo } = personalizedResult;
+    executionDetails['personalized'] = personalizedExecutionInfo;
+    
+    executionDetails['packing_message'] = {
+      scriptKey: 'packing_message',
+      name: 'Packing Slip and Message Cards',
+      success: false,
+      skipped: true,
+      reason: 'Personalized script failed',
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+  }
+
+  handleNoOrdersForPersonalized(results, executionDetails, reason) {
+    console.log(`${reason}. Skipping personalized and packing-message scripts.`);
+    
+    results['personalized_packingslip_notes'] = null;
+    executionDetails['personalized'] = {
+      scriptKey: 'personalized',
+      name: 'Personalized Products Report',
+      success: false,
+      skipped: true,
+      reason: reason,
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+    
+    executionDetails['packing_message'] = {
+      scriptKey: 'packing_message',
+      name: 'Packing Slip and Message Cards',
+      success: false,
+      skipped: true,
+      reason: reason,
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+  }
+
+  async processPolaroidImages(results, deliveryDate, finalBatchNumbers) {
+    if (results['personalized_packingslip_notes'] && Array.isArray(results['personalized_packingslip_notes'])) {
+      const polaroidData = results['personalized_packingslip_notes']
+        .map(item => {
+          try {
+            const parsed = typeof item === 'string' ? JSON.parse(item) : item;
+            return parsed.polaroid_photo_data ? parsed : null;
+          } catch (error) {
+            console.error('Error parsing personalized item:', error);
+            return null;
+          }
+        })
+        .filter(item => item && item.polaroid_photo_data);
+
+      if (polaroidData.length > 0) {
+        console.log(`Processing ${polaroidData.length} locations with polaroid data...`);
+        console.log('Note: Folders should already exist from pre-creation step');
+        
+        try {
+          const gdriveService = new GoogleDriveService();
+          
+          const polaroidProcessingResults = await gdriveService.processPolaroidImages(
+            polaroidData, 
+            deliveryDate, 
+            finalBatchNumbers
+          );
+          
+          console.log('Polaroid processing completed:', polaroidProcessingResults.summary);
+          return polaroidProcessingResults;
+        } catch (error) {
+          console.error('Error processing polaroid images:', error.message);
+          return {
+            success: false,
+            error: error.message,
+            summary: {
+              totalImages: 0,
+              successfulUploads: 0,
+              failedUploads: 0,
+              locationsProcessed: 0
+            }
+          };
+        }
+      } else {
+        console.log('No polaroid data found in personalized results');
+      }
+    } else {
+      console.log('No personalized results available for polaroid processing');
+    }
+    return null;
+  }
+
+  async executeFosUpdateStep(orderTrackingArray, executeFosUpdate_flag, scriptExecutor, results, executionDetails) {
+    let successCount = 0;
+    let failureCount = 0;
+
+    console.log(`\n🔄 === FOS UPDATE API EXECUTION DECISION ===`);
+    console.log(`📊 executeFosUpdate_flag: ${executeFosUpdate_flag} (dev_mode[3] = '${this.requestParams.dev_mode[3]}')`);
+
+    if (orderTrackingArray.length > 0) {
+      const ordersForPersonalized = orderTrackingArray
+        .filter(entry => entry.gopeople_status === true || entry.auspost_status === true)
+        .map(entry => entry.order_number);
+
+      console.log(`📋 Orders with successful logistics status: ${ordersForPersonalized.length}`);
+
+      if (ordersForPersonalized.length > 0 && executeFosUpdate_flag) {
+        console.log(`✅ Decision: EXECUTING FOS Update calls`);
+        console.log(`=== END FOS UPDATE API DECISION ===\n`);
+
+        const fosExtendedParams = { ...this.requestParams, orderNumbers: ordersForPersonalized };
+
+        console.log(`Executing FOS_update script with ${ordersForPersonalized.length} orders that went to personalized...`);
+        const fosUpdateResult = await scriptExecutor.executeScript('fos_update', this.SCRIPTS_CONFIG.fos_update, fosExtendedParams);
+        
+        if (fosUpdateResult.success) {
+          results['fos_update'] = fosUpdateResult.data;
+          
+          const { data: fosData, processedOrderNumbers: fosProcessedOrderNumbers, scriptKey: fosScriptKey, ...fosExecutionInfo } = fosUpdateResult;
+          executionDetails['fos_update'] = fosExecutionInfo;
+          
+          this.updateTrackingArrayFos(fosProcessedOrderNumbers, orderTrackingArray);
+          successCount++;
+        } else {
+          results['fos_update'] = null;
+          
+          const { data: fosData, processedOrderNumbers: fosProcessedOrderNumbers, scriptKey: fosScriptKey, ...fosExecutionInfo } = fosUpdateResult;
+          executionDetails['fos_update'] = fosExecutionInfo;
+          failureCount++;
+        }
+      } else if (!executeFosUpdate_flag) {
+        console.log(`❌ Decision: SKIPPING FOS Update calls (dev_mode flag disabled)`);
+        console.log(`=== END FOS UPDATE API DECISION ===\n`);
+        this.handleFosSkipped(results, executionDetails, 'Skipped due to dev_mode flag');
+        failureCount++;
+      } else {
+        console.log(`❌ Decision: SKIPPING FOS Update calls (no orders available)`);
+        console.log(`=== END FOS UPDATE API DECISION ===\n`);
+        this.handleFosSkipped(results, executionDetails, 'No orders available for processing');
+        failureCount++;
+      }
+    } else {
+      this.handleFosSkipped(results, executionDetails, 'No orders found to process');
+      failureCount++;
+    }
+    
+    return { successCount, failureCount };
+  }
+
+  updateTrackingArrayFos(fosProcessedOrderNumbers, orderTrackingArray) {
+    if (fosProcessedOrderNumbers && fosProcessedOrderNumbers.length > 0) {
+      fosProcessedOrderNumbers.forEach(orderNumber => {
+        const trackingEntry = orderTrackingArray.find(entry => entry.order_number === orderNumber);
+        if (trackingEntry) {
+          trackingEntry.updateProcessingStatus = true;
+        }
+      });
+      console.log(`Updated updateProcessingStatus for ${fosProcessedOrderNumbers.length} orders`);
+    }
+  }
+
+  handleFosSkipped(results, executionDetails, reason) {
+    console.log(`Dev mode: Skipping FOS_update script execution`);
+
+    results['fos_update'] = null;
+    executionDetails['fos_update'] = {
+      scriptKey: 'fos_update',
+      name: 'FOS Update Script',
+      success: false,
+      skipped: true,
+      reason: reason,
+      devModeSkipped: true,
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+  }
+
+  async executePersonalizedApiStep(executePersonalizedApiCalls_flag, results, executionDetails) {
+    const startTime = Date.now();
+    let successCount = 0;
+    let failureCount = 0;
+
+    try {
+      console.log(`\n📄 === PERSONALIZED API EXECUTION DECISION ===`);
+      console.log(`📊 executePersonalizedApiCalls_flag: ${executePersonalizedApiCalls_flag} (dev_mode[1] = '${this.requestParams.dev_mode[1]}')`);
+
+      const personalizedData = results['personalized_packingslip_notes'];
+      console.log(`📋 Personalized data available: ${personalizedData ? 'YES' : 'NO'} (${personalizedData ? personalizedData.length : 0} entries)`);
+
+      if (!executePersonalizedApiCalls_flag) {
+        console.log(`❌ Decision: SKIPPING Personalized API calls (dev_mode flag disabled)`);
+        console.log(`=== END PERSONALIZED API DECISION ===\n`);
+        this.handlePersonalizedApiSkipped(results, executionDetails, 'Skipped due to dev_mode flag');
+        return { successCount: 0, failureCount: 1 };
+      }
+
+      if (!personalizedData) {
+        console.log(`❌ Decision: SKIPPING Personalized API calls (no data available)`);
+        console.log(`=== END PERSONALIZED API DECISION ===\n`);
+        this.handlePersonalizedApiSkipped(results, executionDetails, 'No personalized_packingslip_notes data available');
+        return { successCount: 0, failureCount: 1 };
+      }
+
+      console.log(`✅ Decision: EXECUTING Personalized API calls`);
+      console.log(`=== END PERSONALIZED API DECISION ===\n`);
+
+      console.log('Executing Personalized API service...');
+
+      // Validate configuration before making API calls
+      const configValidation = this.personalizedApiService.validateConfiguration();
+      if (!configValidation.valid) {
+        throw new Error(`Configuration validation failed: ${configValidation.issues.join(', ')}`);
+      }
+
+      const apiResults = await this.personalizedApiService.processPersonalizedPackingNotes(personalizedData);
+
+      // Store the results
+      results['personalized_api_service'] = apiResults;
+
+      executionDetails['personalized_api_service'] = {
+        scriptKey: 'personalized_api_service',
+        name: 'Personalized API Service',
+        success: apiResults.success,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        processingSummary: apiResults.summary,
+        processedEndpoints: apiResults.processedEndpoints.length,
+        fieldValidation: apiResults.fieldValidation,
+        errors: apiResults.errors
+      };
+
+      if (apiResults.success) {
+        console.log(`Personalized API service completed successfully. Processed ${apiResults.summary.totalProcessed} data types with ${apiResults.summary.successfulCalls} successful calls.`);
+        successCount = 1;
+      } else {
+        console.log(`Personalized API service completed with errors: ${apiResults.errors.join(', ')}`);
+        failureCount = 1;
+      }
+
+    } catch (error) {
+      console.error('Personalized API service error:', error.message);
+
+      results['personalized_api_service'] = {
+        success: false,
+        error: error.message
+      };
+
+      executionDetails['personalized_api_service'] = {
+        scriptKey: 'personalized_api_service',
+        name: 'Personalized API Service',
+        success: false,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        error: error.message
+      };
+
+      failureCount = 1;
+    }
+
+    return { successCount, failureCount };
+  }
+
+  handlePersonalizedApiSkipped(results, executionDetails, reason) {
+    console.log(`Personalized API service: ${reason}`);
+
+    results['personalized_api_service'] = null;
+    executionDetails['personalized_api_service'] = {
+      scriptKey: 'personalized_api_service',
+      name: 'Personalized API Service',
+      success: false,
+      skipped: true,
+      reason: reason,
+      devModeSkipped: reason.includes('dev_mode'),
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+  }
+
+  async executeGpLabelsStep(executeGpLabelsApiCalls_flag, gopeopleResults, results, executionDetails, finalBatchNumbers) {
+    const startTime = Date.now();
+
+    try {
+      console.log(`\n🏷️ === GP LABELS API EXECUTION DECISION ===`);
+      console.log(`📊 executeGpLabelsApiCalls_flag: ${executeGpLabelsApiCalls_flag} (dev_mode[2] = '${this.requestParams.dev_mode[2]}')`);
+      console.log(`📋 Successful GoPeople orders available: ${gopeopleResults?.successfulOrders?.length || 0}`);
+
+      if (!executeGpLabelsApiCalls_flag) {
+        console.log(`❌ Decision: SKIPPING GP Labels API calls (dev_mode flag disabled)`);
+        console.log(`=== END GP LABELS API DECISION ===\n`);
+        this.handleGpLabelsApiSkipped(results, executionDetails, 'Skipped due to dev_mode flag');
+        return null;
+      }
+
+      if (!gopeopleResults || !gopeopleResults.successfulOrders || gopeopleResults.successfulOrders.length === 0) {
+        console.log(`❌ Decision: SKIPPING GP Labels API calls (no successful GoPeople orders)`);
+        console.log(`=== END GP LABELS API DECISION ===\n`);
+        this.handleGpLabelsApiSkipped(results, executionDetails, 'No successful GoPeople orders available for GP labels processing');
+        return null;
+      }
+
+      console.log(`✅ Decision: EXECUTING GP Labels API calls`);
+      console.log(`=== END GP LABELS API DECISION ===\n`);
+
+      console.log('Re-processing GP Labels data with correct batch numbers...');
+      const gpLabelsData = this.gopeopleService.processLabelsData(gopeopleResults.successfulOrders, finalBatchNumbers);
+
+      if (!gpLabelsData || Object.keys(gpLabelsData).length === 0) {
+        this.handleGpLabelsApiSkipped(results, executionDetails, 'No GP labels data generated');
+        return null;
+      }
+
+      console.log('Executing GP Labels API service...');
+
+      // Validate configuration before making API calls
+      const configValidation = this.gpLabelsApiService.validateConfiguration();
+      if (!configValidation.valid) {
+        throw new Error(`GP Labels API configuration validation failed: ${configValidation.issues.join(', ')}`);
+      }
+
+      const apiResults = await this.gpLabelsApiService.processGpLabelsData(gpLabelsData);
+
+      // Store the results
+      results['gp_labels_api_service'] = apiResults;
+
+      executionDetails['gp_labels_api_service'] = {
+        scriptKey: 'gp_labels_api_service',
+        name: 'GoPeople Labels API Service',
+        success: apiResults.success,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        processingSummary: apiResults.summary,
+        processedBatches: apiResults.processedBatches.length,
+        errors: apiResults.errors
+      };
+
+      if (apiResults.success) {
+        console.log(`GP Labels API service completed successfully. Processed ${apiResults.summary.totalBatches} batches with ${apiResults.summary.successfulCalls} successful calls.`);
+      } else {
+        console.log(`GP Labels API service completed with errors: ${apiResults.errors.join(', ')}`);
+      }
+
+      return {
+        success: apiResults.success,
+        gpLabelsData: gpLabelsData,
+        apiResults: apiResults
+      };
+
+    } catch (error) {
+      console.error('GP Labels API service error:', error.message);
+
+      results['gp_labels_api_service'] = {
+        success: false,
+        error: error.message
+      };
+
+      executionDetails['gp_labels_api_service'] = {
+        scriptKey: 'gp_labels_api_service',
+        name: 'GoPeople Labels API Service',
+        success: false,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        error: error.message
+      };
+
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  handleGpLabelsApiSkipped(results, executionDetails, reason) {
+    console.log(`GP Labels API service: ${reason}`);
+
+    results['gp_labels_api_service'] = null;
+    executionDetails['gp_labels_api_service'] = {
+      scriptKey: 'gp_labels_api_service',
+      name: 'GoPeople Labels API Service',
+      success: false,
+      skipped: true,
+      reason: reason,
+      devModeSkipped: reason.includes('dev_mode'),
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+
+    return null;
+  }
+
+  async executeAuspostLabelsStep(executeGpLabelsApiCalls_flag, auspostResults, results, executionDetails, finalBatchNumbers) {
+    const startTime = Date.now();
+
+    try {
+      console.log(`\n🏷️  === AUSPOST LABELS API EXECUTION DECISION ===`);
+      console.log(`📊 executeGpLabelsApiCalls_flag: ${executeGpLabelsApiCalls_flag} (dev_mode[2] = '${this.requestParams.dev_mode[2]}')`);
+      console.log(`📋 Successful AusPost orders available: ${auspostResults?.successfulOrders?.length || 0}`);
+
+      if (!executeGpLabelsApiCalls_flag) {
+        console.log(`❌ Decision: SKIPPING AusPost Labels API calls (dev_mode flag disabled)`);
+        console.log(`=== END AUSPOST LABELS API DECISION ===\n`);
+        this.handleAuspostLabelsApiSkipped(results, executionDetails, 'Skipped due to dev_mode flag');
+        return null;
+      }
+
+      if (!auspostResults || !auspostResults.successfulOrders || auspostResults.successfulOrders.length === 0) {
+        console.log(`❌ Decision: SKIPPING AusPost Labels API calls (no successful AusPost orders)`);
+        console.log(`=== END AUSPOST LABELS API DECISION ===\n`);
+        this.handleAuspostLabelsApiSkipped(results, executionDetails, 'No successful AusPost orders available for labels processing');
+        return null;
+      }
+
+      console.log(`✅ Decision: EXECUTING AusPost Labels API calls`);
+      console.log(`=== END AUSPOST LABELS API DECISION ===\n`);
+
+      console.log('Processing AusPost Labels data with batch numbers...');
+      const auspostLabelsData = this.auspostService.processLabelsData(auspostResults.successfulOrders, finalBatchNumbers);
+
+      if (!auspostLabelsData || Object.keys(auspostLabelsData).length === 0) {
+        this.handleAuspostLabelsApiSkipped(results, executionDetails, 'No AusPost labels data generated');
+        return null;
+      }
+
+      console.log('Executing AusPost Labels API service...');
+
+      // Validate configuration before making API calls
+      const configValidation = this.auspostLabelsApiService.validateConfiguration();
+      if (!configValidation.valid) {
+        throw new Error(`AusPost Labels API configuration validation failed: ${configValidation.issues.join(', ')}`);
+      }
+
+      const apiResults = await this.auspostLabelsApiService.processAuspostLabelsData(auspostLabelsData);
+
+      // Store the results
+      results['auspost_labels_api_service'] = apiResults;
+
+      executionDetails['auspost_labels_api_service'] = {
+        scriptKey: 'auspost_labels_api_service',
+        name: 'AusPost Labels API Service',
+        success: apiResults.success,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        processingSummary: apiResults.summary,
+        processedLocations: apiResults.processedLocations.length,
+        errors: apiResults.errors
+      };
+
+      if (apiResults.success) {
+        console.log(`AusPost Labels API service completed successfully. Processed ${apiResults.summary.totalLocations} locations with ${apiResults.summary.successfulCalls} successful calls.`);
+      } else {
+        console.log(`AusPost Labels API service completed with errors: ${apiResults.errors.join(', ')}`);
+      }
+
+      return {
+        success: apiResults.success,
+        auspostLabelsData: auspostLabelsData,
+        apiResults: apiResults
+      };
+
+    } catch (error) {
+      console.error('AusPost Labels API service error:', error.message);
+
+      results['auspost_labels_api_service'] = {
+        success: false,
+        error: error.message
+      };
+
+      executionDetails['auspost_labels_api_service'] = {
+        scriptKey: 'auspost_labels_api_service',
+        name: 'AusPost Labels API Service',
+        success: false,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        error: error.message
+      };
+
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  handleAuspostLabelsApiSkipped(results, executionDetails, reason) {
+    console.log(`AusPost Labels API service: ${reason}`);
+
+    results['auspost_labels_api_service'] = null;
+    executionDetails['auspost_labels_api_service'] = {
+      scriptKey: 'auspost_labels_api_service',
+      name: 'AusPost Labels API Service',
+      success: false,
+      skipped: true,
+      reason: reason,
+      devModeSkipped: reason.includes('dev_mode'),
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+
+    return null;
+  }
+
+  updateTrackingArrayWithApiResults(orderTrackingArray, personalizedApiResults) {
+    console.log('Updating tracking array with API results...');
+
+    const apiSuccess = personalizedApiResults && personalizedApiResults.success;
+    const ordersWithPersonalizedData = [];
+
+    if (apiSuccess && personalizedApiResults.apiResults) {
+      // Extract order numbers that were successfully processed by the API
+      // by parsing the personalized_packingslip_notes data
+      try {
+        const personalizedData = personalizedApiResults.apiResults.processedEndpoints;
+        personalizedData.forEach(endpointResult => {
+          if (endpointResult.success && endpointResult.entryObject) {
+            // Extract order numbers from the entry object
+            const entryData = endpointResult.entryObject;
+
+            // Check for order numbers in different data types
+            ['packing_slips_data', 'message_cards_data', 'jars_luxe_data', 'jars_classic_large_data', 'prosecco_data', 'candles_plants_data'].forEach(dataType => {
+              if (entryData[dataType] && Array.isArray(entryData[dataType])) {
+                entryData[dataType].forEach(item => {
+                  if (item.order_number) {
+                    ordersWithPersonalizedData.push(item.order_number);
+                  }
+                  if (item.message_cards_data1 && item.message_cards_data1.order_number) {
+                    ordersWithPersonalizedData.push(item.message_cards_data1.order_number);
+                  }
+                  if (item.message_cards_data2 && item.message_cards_data2.order_number) {
+                    ordersWithPersonalizedData.push(item.message_cards_data2.order_number);
+                  }
+                  if (item.message_cards_data3 && item.message_cards_data3.order_number) {
+                    ordersWithPersonalizedData.push(item.message_cards_data3.order_number);
+                  }
+                });
+              }
+            });
+          }
+        });
+      } catch (error) {
+        console.error('Error parsing API results for tracking update:', error);
+      }
+    }
+
+    // Update tracking array based on API success
+    orderTrackingArray.forEach(entry => {
+      if (apiSuccess && ordersWithPersonalizedData.includes(entry.order_number)) {
+        // API succeeded and this order was processed
+        console.log(`Order ${entry.order_number}: API calls succeeded`);
+        // Status was already set correctly during script processing
+      } else {
+        // API was skipped or failed, set all personalized-related status to false
+        console.log(`Order ${entry.order_number}: API calls ${apiSuccess ? 'succeeded but order not processed' : 'skipped/failed'}`);
+        entry.personalized_status = false;
+        entry.packing_slip_status = false;
+        entry.message_cards_status = false;
+      }
+    });
+
+    console.log(`Updated tracking array based on API success: ${apiSuccess ? 'SUCCESS' : 'FAILED/SKIPPED'}`);
+  }
+
+  async executeGoogleSheetsWriteStep(orderTrackingArray, executeGoogleSheetsWrite_flag, results, executionDetails) {
+    const startTime = Date.now();
+    let successCount = 0;
+    let failureCount = 0;
+
+    try {
+      console.log(`\n📊 === GOOGLE SHEETS WRITE DECISION ===`);
+      console.log(`📊 executeGoogleSheetsWrite_flag: ${executeGoogleSheetsWrite_flag} (dev_mode[4] = '${this.requestParams.dev_mode[4]}')`);
+      console.log(`📋 Orders in tracking array: ${orderTrackingArray.length}`);
+
+      if (!executeGoogleSheetsWrite_flag) {
+        console.log(`❌ Decision: SKIPPING Google Sheets write (dev_mode flag disabled)`);
+        console.log(`=== END GOOGLE SHEETS WRITE DECISION ===\n`);
+        this.handleGoogleSheetsSkipped(results, executionDetails, 'Skipped due to dev_mode flag');
+        return { successCount: 0, failureCount: 1 };
+      }
+
+      if (!orderTrackingArray || orderTrackingArray.length === 0) {
+        console.log(`❌ Decision: SKIPPING Google Sheets write (no orders available)`);
+        console.log(`=== END GOOGLE SHEETS WRITE DECISION ===\n`);
+        this.handleGoogleSheetsSkipped(results, executionDetails, 'No orders available to write');
+        return { successCount: 0, failureCount: 1 };
+      }
+
+      console.log(`✅ Decision: EXECUTING Google Sheets write`);
+      console.log(`=== END GOOGLE SHEETS WRITE DECISION ===\n`);
+
+      console.log('Executing Google Sheets write service...');
+
+      // Validate configuration before writing
+      const configValidation = this.googleSheetsService.validateConfiguration();
+      if (!configValidation.valid) {
+        throw new Error(`Google Sheets configuration validation failed: ${configValidation.issues.join(', ')}`);
+      }
+
+      const writeResults = await this.googleSheetsService.appendOrdersToSheet(orderTrackingArray);
+
+      // Store the results
+      results['google_sheets_write'] = writeResults;
+
+      executionDetails['google_sheets_write'] = {
+        scriptKey: 'google_sheets_write',
+        name: 'Google Sheets Write Service',
+        success: writeResults.success,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        rowsWritten: writeResults.rowsWritten,
+        spreadsheetId: writeResults.spreadsheetId,
+        sheetName: writeResults.sheetName,
+        error: writeResults.error || null
+      };
+
+      if (writeResults.success) {
+        console.log(`Google Sheets write completed successfully. Wrote ${writeResults.rowsWritten} rows.`);
+        successCount = 1;
+      } else {
+        console.log(`Google Sheets write completed with errors: ${writeResults.error}`);
+        failureCount = 1;
+      }
+
+    } catch (error) {
+      console.error('Google Sheets write service error:', error.message);
+
+      results['google_sheets_write'] = {
+        success: false,
+        error: error.message
+      };
+
+      executionDetails['google_sheets_write'] = {
+        scriptKey: 'google_sheets_write',
+        name: 'Google Sheets Write Service',
+        success: false,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        error: error.message
+      };
+
+      failureCount = 1;
+    }
+
+    return { successCount, failureCount };
+  }
+
+  handleGoogleSheetsSkipped(results, executionDetails, reason) {
+    console.log(`Google Sheets write service: ${reason}`);
+
+    results['google_sheets_write'] = null;
+    executionDetails['google_sheets_write'] = {
+      scriptKey: 'google_sheets_write',
+      name: 'Google Sheets Write Service',
+      success: false,
+      skipped: true,
+      reason: reason,
+      devModeSkipped: reason.includes('dev_mode'),
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+  }
+}
+
+module.exports = OrderProcessingPipeline;

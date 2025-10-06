@@ -1,20 +1,22 @@
 const query = `
-SELECT 
-    so.id, 
-    so.order_number, 
-    so.process_status, 
-    sfl.location_name, 
+SELECT
+    so.id,
+    so.order_number,
+    so.process_status,
+    so.shop_id,
+    sfl.location_name,
     sode.delivery_date
 FROM (
-    SELECT 
-        so.id, 
-        so.order_number, 
-        so.process_status, 
+    SELECT
+        so.id,
+        so.order_number,
+        so.process_status,
+        so.shop_id,
         so.fulfillment_location_id,
         so.created_at,
         ROW_NUMBER() OVER (
-            PARTITION BY sfl.location_name 
-            ORDER BY 
+            PARTITION BY sfl.location_name
+            ORDER BY
                 CASE sode.residence_type
                     WHEN 'Office/Business' THEN 1
                     WHEN 'Office/business' THEN 2
@@ -29,27 +31,27 @@ FROM (
                 END,
                 so.created_at DESC
         ) as rn
-    FROM 
+    FROM
         flowerchimp.shopify_orders so
-    LEFT JOIN 
+    LEFT JOIN
         shopify_fulfillment_locations sfl ON so.fulfillment_location_id = sfl.id
-    LEFT JOIN 
+    LEFT JOIN
         shopify_order_additional_details sode ON so.id = sode.order_id
-    WHERE 
-        so.shop_id = 10 
-        AND sode.delivery_date = '2025-09-02' 
+    WHERE
+        so.shop_id IN (PLACEHOLDER_SHOP_IDS)
+        AND sode.delivery_date = '2025-09-02'
         AND so.process_status IS NULL
-        AND sode.is_same_day = 1
+        AND sode.is_same_day = PLACEHOLDER_IS_SAME_DAY
         AND sfl.location_name IN ('Melbourne', 'Sydney', 'Perth', 'Adelaide', 'Brisbane')
 ) ranked_orders
 JOIN flowerchimp.shopify_orders so ON ranked_orders.id = so.id
-LEFT JOIN 
+LEFT JOIN
     shopify_order_additional_details sode ON so.id = sode.order_id
-LEFT JOIN 
+LEFT JOIN
     shopify_fulfillment_locations sfl ON so.fulfillment_location_id = sfl.id
-WHERE 
+WHERE
     ranked_orders.rn <= 20
-ORDER BY 
+ORDER BY
     sfl.location_name, so.created_at DESC;
 `;
 
@@ -57,28 +59,36 @@ ORDER BY
 // This maintains the existing functionality while the location summary is generated in index.js
 function transform(rawData) {
     console.log('Orders Transform: Processing', rawData.length, 'raw orders');
-    
-    // Create array of objects with order_number and location
+
+    // Create array of objects with order_number, location, and shop_id
     const orderData = rawData
         .filter(row => row.order_number && row.location_name) // Filter out any null/undefined values
         .map(row => ({
             order_number: row.order_number,
-            location: row.location_name
+            location: row.location_name,
+            shop_id: row.shop_id
         }))
-        .filter((orderData, index, array) => 
+        .filter((orderData, index, array) =>
             // Remove duplicates based on order_number
             array.findIndex(item => item.order_number === orderData.order_number) === index
         );
-    
+
     console.log('Orders Transform: Processed', orderData.length, 'unique orders');
-    
+
     // Log location breakdown for debugging
     const locationBreakdown = orderData.reduce((acc, order) => {
         acc[order.location] = (acc[order.location] || 0) + 1;
         return acc;
     }, {});
-    // console.log('Orders Transform: Location breakdown:', locationBreakdown);
-    
+
+    // Log store breakdown for debugging
+    const storeBreakdown = orderData.reduce((acc, order) => {
+        const storeName = order.shop_id === 10 ? 'LVLY' : order.shop_id === 6 ? 'Bloomeroo' : 'Unknown';
+        acc[storeName] = (acc[storeName] || 0) + 1;
+        return acc;
+    }, {});
+    console.log('Orders Transform: Store breakdown:', storeBreakdown);
+
     return orderData;
 }
 
