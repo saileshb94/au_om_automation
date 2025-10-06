@@ -230,7 +230,7 @@ class PersonalizedApiService {
     const keywordMap = {
       'candles_plants_data': 'candles',
       'jars_luxe_data': 'jars_luxe',
-      'jars_classic_large_data': 'jars_classic_jarge',
+      'jars_classic_large_data': 'jars_classic_large',
       'prosecco_data': 'prosecco',
       'packing_slips_data': 'packing_slips',
       'message_cards_data': 'message_cards',

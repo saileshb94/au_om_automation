@@ -9,23 +9,23 @@ const {
 const TimezoneHelper = require('../utils/TimezoneHelper');
 
 const query = `
-SELECT
-    so.id,
-    so.process_status,
+SELECT 
+    so.id, 
     so.shop_id,
-    sfl.location_name,
+    so.process_status, 
+    sfl.location_name, 
     sode.delivery_date,
     so.order_number,
     sode.building_name,
     sode.room_number,
     sode.residence_type,
-    sos.name,
-    CASE
-        WHEN sos.address2 IS NOT NULL AND sos.address2 != ''
+    sos.name, 
+    CASE 
+        WHEN sos.address2 IS NOT NULL AND sos.address2 != '' 
         THEN CONCAT(sos.address1, ', ', sos.address2)
         ELSE sos.address1
     END AS address,
-    sos.phone,
+    sos.phone, 
     sode.delivery_instructions,
     sos.city,
     sos.province,
@@ -33,11 +33,11 @@ SELECT
     so.email,
     sos.company
 FROM shopify_orders so
-LEFT JOIN
+LEFT JOIN 
     shopify_order_additional_details sode ON so.id = sode.order_id
-LEFT JOIN
+LEFT JOIN 
     shopify_order_shipping sos ON so.id = sos.order_id
-LEFT JOIN
+LEFT JOIN 
     shopify_fulfillment_locations sfl ON so.fulfillment_location_id = sfl.id
 WHERE sode.is_same_day = 1
 ORDER BY so.created_at DESC
@@ -137,34 +137,16 @@ function transform(rawData, deliveryDate) {
     
     // Determine isCommercial based on residence_type
     const isCommercial = row.residence_type !== 'House/Unit/Apartment';
-
-    // Determine ref prefix based on shop_id
-    let refPrefix = '';
-    if (row.shop_id === 10) {
-      refPrefix = 'LV';
-    } else if (row.shop_id === 6) {
-      refPrefix = 'BL';
-    }
-
-    // Determine store name based on shop_id
-    let storeName = 'NA';
-    if (row.shop_id === 10) {
-      storeName = 'LVLY';
-    } else if (row.shop_id === 6) {
-      storeName = 'Bloomeroo';
-    }
-
+    
     // Format pickup date with correct timezone
     const pickupDateBase = deliveryDate || row.delivery_date;
     const timezoneOffset = TimezoneHelper.getTimezoneOffset(row.location_name, pickupDateBase);
     const pickUpDate = `${pickupDateBase} ${pickupTime}:00${timezoneOffset}`;
-
+    
     transformedOrders.push({
       orderNumber: row.order_number, // Keep this for tracking
       location_name: row.location_name, // Add location for GP Labels processing
       delivery_date: deliveryDate || row.delivery_date, // Add delivery date for GP Labels processing
-      shop_id: row.shop_id, // Add shop_id for tracking
-      store: storeName, // Add store name for reporting
       apiPayload: {
         addressFrom: addressFrom,
         addressTo: {
@@ -187,7 +169,7 @@ function transform(rawData, deliveryDate) {
         pickUpDate: pickUpDate,
         description: GOPEOPLE_DELIVERY_DEFAULTS.description,
         note: row.delivery_instructions || '',
-        ref: refPrefix ? `${refPrefix}${row.order_number}` : row.order_number,
+        ref: `${GOPEOPLE_DELIVERY_DEFAULTS.refPrefix}${row.order_number}`,
         ref2: GOPEOPLE_DELIVERY_DEFAULTS.ref2,
         atl: GOPEOPLE_DELIVERY_DEFAULTS.atl,
         idCheckRequired: GOPEOPLE_DELIVERY_DEFAULTS.idCheckRequired,

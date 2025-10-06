@@ -29,15 +29,16 @@ class QueryBuilder {
         const deliveryDate = DateHelper.formatDate(params.date);
         queryParams.push(deliveryDate);
       }
-      
+
       // Add order numbers filter if provided
       if (params.orderNumbers && params.orderNumbers.length > 0) {
         const orderNumberPlaceholders = params.orderNumbers.map(() => '?').join(',');
-        query = query.replace(/ORDER BY/i, `AND so.order_number IN (${orderNumberPlaceholders}) ORDER BY`);
+        // Insert filter in WHERE clause (before GROUP BY), not after
+        query = query.replace(/(WHERE[\s\S]*?)(GROUP BY)/i, `$1 AND so.order_number IN (${orderNumberPlaceholders}) $2`);
         queryParams.push(...params.orderNumbers);
         console.log(`Packing-Message: Built query for ${params.orderNumbers.length} order numbers`);
       }
-      
+
       return { query, params: queryParams };
     }
     

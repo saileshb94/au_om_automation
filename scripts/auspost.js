@@ -10,8 +10,8 @@ const TimezoneHelper = require('../utils/TimezoneHelper');
 const query = `
 SELECT
     so.id,
-    so.process_status,
     so.shop_id,
+    so.process_status,
     sfl.location_name,
     sode.delivery_date,
     so.order_number,
@@ -204,30 +204,10 @@ function transform(rawData, deliveryDate) {
     // Map state to code (e.g., "Victoria" → "VIC")
     const stateCode = mapStateToCode(row.province);
 
-    // Determine ref prefix based on shop_id
-    let refPrefix = '';
-    if (row.shop_id === 10) {
-      refPrefix = 'LV';
-    } else if (row.shop_id === 6) {
-      refPrefix = 'BL';
-    }
-
-    // Determine store name based on shop_id
-    let storeName = 'NA';
-    if (row.shop_id === 10) {
-      storeName = 'LVLY';
-    } else if (row.shop_id === 6) {
-      storeName = 'Bloomeroo';
-    }
-
-    // Build references with prefix
-    const shipmentRef = refPrefix ? `${refPrefix}${row.order_number}` : row.order_number;
-    const customerRef1 = refPrefix ? `${refPrefix}${row.order_number}` : row.order_number;
-
     // Build shipment object for Auspost API
     const shipmentObject = {
-      shipment_reference: shipmentRef,
-      customer_reference_1: customerRef1,
+      shipment_reference: row.order_number,
+      customer_reference_1: row.order_number,
       customer_reference_2: '', // SKU list - not available in current data, leaving empty
       generate_label_metadata: true,
       from: {
@@ -270,8 +250,6 @@ function transform(rawData, deliveryDate) {
       orderNumber: row.order_number,
       location_name: row.location_name,
       delivery_date: deliveryDate || row.delivery_date,
-      shop_id: row.shop_id, // Add shop_id for API credential selection
-      store: storeName, // Add store name for reporting
       apiPayload: shipmentObject
     });
   }

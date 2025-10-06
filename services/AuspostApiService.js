@@ -68,18 +68,18 @@ class AuspostApiService {
       console.log(`  To: ${orderData.apiPayload.to.name}, ${orderData.apiPayload.to.suburb} ${orderData.apiPayload.to.state}`);
       console.log(`  Items: ${orderData.apiPayload.items.length} item(s)`);
 
-      console.log(`\n📋 === FULL REQUEST PAYLOAD (JSON) ===`);
-      console.log(JSON.stringify(requestPayload, null, 2));
-      console.log(`=== END FULL PAYLOAD ===\n`);
+      // console.log(`\n📋 === FULL REQUEST PAYLOAD (JSON) ===`);
+      // console.log(JSON.stringify(requestPayload, null, 2));
+      // console.log(`=== END FULL PAYLOAD ===\n`);
 
       console.log(`\n🌐 Making POST request to: ${credentials.url}`);
       console.log(`📋 === REQUEST PARAMETERS ===`);
       console.log(`  URL: ${credentials.url}`);
       console.log(`  Account Number (header): ${credentials.accountNumber}`);
-      console.log(`  Authorization (first 20 chars): ${credentials.authorization ? credentials.authorization.substring(0, 20) + '...' : 'NOT SET'}`);
-      console.log(`  Content-Type: application/json`);
-      console.log(`  Accept: application/json`);
-      console.log(`  Timeout: 10000ms`);
+      // console.log(`  Authorization (first 20 chars): ${credentials.authorization ? credentials.authorization.substring(0, 20) + '...' : 'NOT SET'}`);
+      // console.log(`  Content-Type: application/json`);
+      // console.log(`  Accept: application/json`);
+      // console.log(`  Timeout: 10000ms`);
       console.log(`=== END REQUEST PARAMETERS ===\n`);
 
       const response = await axios.post(
