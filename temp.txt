@@ -1,0 +1,39 @@
+sailesh@limitless.my
+
+================================
+All deployments completed!
+================================
+Press any key to continue . . . 
+Terminate batch job (Y/N)? 
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
+
+D:\AU_OM>
