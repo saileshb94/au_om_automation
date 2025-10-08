@@ -32,9 +32,13 @@ class OrderProcessingPipeline {
 
   async execute() {
     const overallStartTime = Date.now();
+    const requestId = `REQ-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     let connection;
-    
+
     try {
+      console.log('\n' + '='.repeat(80));
+      console.log(`🚀 NEW REQUEST STARTED - ID: ${requestId}`);
+      console.log('='.repeat(80));
       console.log('Request parameters:', this.requestParams);
       
       // Parse dev_mode flags (5-digit format: gopeople, personalized_api, gp_labels_api, fos_update, google_sheets)
@@ -71,6 +75,7 @@ class OrderProcessingPipeline {
       console.log(`Batch Management: Using delivery date: ${deliveryDate}`);
       
       // Step 0: Get current batch numbers from Firestore
+      console.log(`\n[${requestId}] ━━━ STAGE 0: BATCH INITIALIZATION ━━━`);
       console.log('Batch Management: Fetching current batch numbers...');
       const currentBatchNumbers = await this.batchService.getBatchNumbers(deliveryDate, this.requestParams.is_same_day);
       
@@ -88,6 +93,7 @@ class OrderProcessingPipeline {
       let folderPreCreationResults = null;
       
       // Step 1: Execute orders script first
+      console.log(`\n[${requestId}] ━━━ STAGE 1: ORDERS SCRIPT ━━━`);
       console.log('Executing orders script...');
       const ordersResult = await scriptExecutor.executeScript('orders', this.SCRIPTS_CONFIG.orders, this.requestParams);
       
@@ -102,9 +108,10 @@ class OrderProcessingPipeline {
         // console.log('Batch Management: Updating batch numbers based on order counts...');
         // finalBatchNumbers = await this.batchService.updateBatchNumbers(deliveryDate, locationSummary, currentBatchNumbers);
         
-        // Initialize tracking array with order numbers, delivery date, locations, and batch numbers
+        // Initialize tracking array with order IDs, order numbers, delivery date, locations, and batch numbers
         if (ordersResult.data && Array.isArray(ordersResult.data) && ordersResult.data.length > 0) {
           orderTrackingArray = ordersResult.data.map(orderData => ({
+            id: orderData.id,  // Add unique database ID
             store: orderData.shop_id === 10 ? 'LVLY' : orderData.shop_id === 6 ? 'BL' : '',
             order_number: orderData.order_number,
             delivery_date: deliveryDate,
@@ -128,6 +135,7 @@ class OrderProcessingPipeline {
       }
       
       // Step 2: Route to logistics provider based on is_same_day parameter
+      console.log(`\n[${requestId}] ━━━ STAGE 2: LOGISTICS PROVIDER ━━━`);
       console.log(`\n🚚 === LOGISTICS PROVIDER ROUTING ===`);
       console.log(`is_same_day parameter: ${this.requestParams.is_same_day} (${this.requestParams.is_same_day === '1' ? 'GoPeople' : 'Auspost'})`);
 
@@ -162,9 +170,11 @@ class OrderProcessingPipeline {
       }
 
       // Step 2.75: Pre-create folder structure for successful logistics orders
+      console.log(`\n[${requestId}] ━━━ STAGE 2.75: FOLDER PRE-CREATION ━━━`);
       folderPreCreationResults = await this.preCreateFolders(orderTrackingArray, deliveryDate, finalBatchNumbers);
 
       // Step 2.8: Process Labels (GP or AusPost based on is_same_day) after folder creation
+      console.log(`\n[${requestId}] ━━━ STAGE 2.8: LABELS PROCESSING ━━━`);
       let labelsApiResults = null;
       if (this.requestParams.is_same_day === '1') {
         // GoPeople labels for same-day orders
@@ -175,6 +185,7 @@ class OrderProcessingPipeline {
       }
       
       // Step 3: Execute personalized and packing-message scripts
+      console.log(`\n[${requestId}] ━━━ STAGE 3: PERSONALIZED & PACKING SCRIPTS ━━━`);
       const { personalizedResults, packingResults } = await this.executePersonalizedAndPackingSteps(
         orderTrackingArray, scriptExecutor, results, executionDetails, finalBatchNumbers, deliveryDate
       );
@@ -182,9 +193,11 @@ class OrderProcessingPipeline {
       failureCount += personalizedResults.failureCount;
       
       // Step 3.5: Process polaroid images to Google Drive
+      console.log(`\n[${requestId}] ━━━ STAGE 3.5: POLAROID PROCESSING ━━━`);
       const polaroidProcessingResults = await this.processPolaroidImages(results, deliveryDate, finalBatchNumbers);
 
       // Step 3.75: Execute Personalized API service
+      console.log(`\n[${requestId}] ━━━ STAGE 3.75: PERSONALIZED API CALLS ━━━`);
       const personalizedApiResults = await this.executePersonalizedApiStep(
         executePersonalizedApiCalls_flag, results, executionDetails
       );
@@ -192,9 +205,11 @@ class OrderProcessingPipeline {
       failureCount += personalizedApiResults.failureCount;
 
       // Step 3.8: Update tracking array with correct API success status
+      console.log(`\n[${requestId}] ━━━ STAGE 3.8: TRACKING ARRAY UPDATE ━━━`);
       this.updateTrackingArrayWithApiResults(orderTrackingArray, personalizedApiResults);
 
       // Step 4: Execute FOS_update script
+      console.log(`\n[${requestId}] ━━━ STAGE 4: FOS UPDATE ━━━`);
       const fosResults = await this.executeFosUpdateStep(
         orderTrackingArray, executeFosUpdate_flag, scriptExecutor, results, executionDetails
       );
@@ -202,6 +217,7 @@ class OrderProcessingPipeline {
       failureCount += fosResults.failureCount;
 
       // Step 5: Write to Google Sheets
+      console.log(`\n[${requestId}] ━━━ STAGE 5: GOOGLE SHEETS WRITE ━━━`);
       const googleSheetsResults = await this.executeGoogleSheetsWriteStep(
         orderTrackingArray, executeGoogleSheetsWrite_flag, results, executionDetails
       );
@@ -210,10 +226,14 @@ class OrderProcessingPipeline {
 
       const overallExecutionTime = Date.now() - overallStartTime;
 
+      console.log(`\n[${requestId}] ━━━ PIPELINE COMPLETE ━━━`);
       console.log(`All scripts completed. Success: ${successCount}, Failed/Skipped: ${failureCount}`);
       console.log(`Order tracking array final state:`, orderTrackingArray.length, 'orders');
       console.log('Final batch numbers used:', finalBatchNumbers);
-      
+      console.log('='.repeat(80));
+      console.log(`✅ REQUEST COMPLETE - ID: ${requestId} - Duration: ${overallExecutionTime}ms`);
+      console.log('='.repeat(80) + '\n');
+
       return ResponseFormatter.formatResponse({
         success: successCount > 0,
         successCount,
@@ -248,20 +268,21 @@ class OrderProcessingPipeline {
     let gopeopleApiResults = null;
     let successCount = 0;
     let failureCount = 0;
-    
+
     if (ordersResult.success && ordersResult.data && Array.isArray(ordersResult.data) && ordersResult.data.length > 0) {
+      const orderIds = ordersResult.data.map(orderData => orderData.id);
       const orderNumbers = ordersResult.data.map(orderData => orderData.order_number);
-      console.log(`Orders script returned ${orderNumbers.length} order numbers.`);
-      
+      console.log(`Orders script returned ${orderIds.length} order IDs and ${orderNumbers.length} order numbers.`);
+
       console.log(`\n🚀 === GOPEOPLE API EXECUTION DECISION ===`);
       console.log(`📊 executeGoPeopleApiCalls_flag: ${executeGoPeopleApiCalls_flag} (dev_mode[0] = '${this.requestParams.dev_mode[0]}')`);
-      console.log(`📋 Orders available for processing: ${orderNumbers.length}`);
+      console.log(`📋 Orders available for processing: ${orderIds.length}`);
 
       if (executeGoPeopleApiCalls_flag) {
         console.log(`✅ Decision: EXECUTING GoPeople API calls`);
         console.log(`=== END GOPEOPLE API DECISION ===\n`);
 
-        const extendedParams = { ...this.requestParams, orderNumbers: orderNumbers };
+        const extendedParams = { ...this.requestParams, orderIds: orderIds, orderNumbers: orderNumbers };
 
         console.log('Executing gopeople script...');
         const gopeopleResult = await scriptExecutor.executeScript('gopeople', this.SCRIPTS_CONFIG.gopeople, extendedParams);
@@ -325,18 +346,19 @@ class OrderProcessingPipeline {
     let failureCount = 0;
 
     if (ordersResult.success && ordersResult.data && Array.isArray(ordersResult.data) && ordersResult.data.length > 0) {
+      const orderIds = ordersResult.data.map(orderData => orderData.id);
       const orderNumbers = ordersResult.data.map(orderData => orderData.order_number);
-      console.log(`Orders script returned ${orderNumbers.length} order numbers for Auspost.`);
+      console.log(`Orders script returned ${orderIds.length} order IDs and ${orderNumbers.length} order numbers for Auspost.`);
 
       console.log(`\n📮 === AUSPOST API EXECUTION DECISION ===`);
       console.log(`📊 executeAuspostApiCalls_flag: ${executeAuspostApiCalls_flag} (dev_mode[0] = '${this.requestParams.dev_mode[0]}')`);
-      console.log(`📋 Orders available for processing: ${orderNumbers.length}`);
+      console.log(`📋 Orders available for processing: ${orderIds.length}`);
 
       if (executeAuspostApiCalls_flag) {
         console.log(`✅ Decision: EXECUTING Auspost API calls`);
         console.log(`=== END AUSPOST API DECISION ===\n`);
 
-        const extendedParams = { ...this.requestParams, orderNumbers: orderNumbers };
+        const extendedParams = { ...this.requestParams, orderIds: orderIds, orderNumbers: orderNumbers };
 
         console.log('Executing auspost script...');
         const auspostResult = await scriptExecutor.executeScript('auspost', this.SCRIPTS_CONFIG.auspost, extendedParams);
@@ -604,44 +626,49 @@ class OrderProcessingPipeline {
     let failureCount = 0;
 
     if (orderTrackingArray.length > 0) {
-      const successfulLogisticsOrders = orderTrackingArray
+      const successfulLogisticsOrderIds = orderTrackingArray
+        .filter(entry => entry.gopeople_status === true || entry.auspost_status === true)
+        .map(entry => entry.id);
+
+      const successfulLogisticsOrderNumbers = orderTrackingArray
         .filter(entry => entry.gopeople_status === true || entry.auspost_status === true)
         .map(entry => entry.order_number);
 
-      if (successfulLogisticsOrders.length > 0) {
-        const extendedParams = { ...this.requestParams, orderNumbers: successfulLogisticsOrders };
+      if (successfulLogisticsOrderIds.length > 0) {
+        const extendedParams = { ...this.requestParams, orderIds: successfulLogisticsOrderIds, orderNumbers: successfulLogisticsOrderNumbers };
 
-        console.log(`Executing personalized script with ${successfulLogisticsOrders.length} orders that passed logistics validation...`);
+        console.log(`Executing personalized script with ${successfulLogisticsOrderIds.length} orders that passed logistics validation...`);
         const personalizedResult = await scriptExecutor.executeScript('personalized', this.SCRIPTS_CONFIG.personalized, extendedParams);
-        
+
         if (personalizedResult.success) {
           // Add batch information to personalized data
           let personalizedDataWithBatch = this.addBatchInfoToData(personalizedResult.data, finalBatchNumbers, deliveryDate);
           const tempPersonalizedData = personalizedDataWithBatch;
-          
+
           const { data: personalizedData, processedOrderNumbers: personalizedProcessedOrderNumbers, scriptKey: personalizedScriptKey, ...personalizedExecutionInfo } = personalizedResult;
           executionDetails['personalized'] = personalizedExecutionInfo;
-          
-          // Update tracking array (initially false, will be corrected after API calls)
-          this.updateTrackingArrayPersonalized(personalizedProcessedOrderNumbers, orderTrackingArray, false);
+
+          // Store processed order numbers for later status update after API calls
+          console.log(`✅ Personalized script succeeded. Processed ${personalizedProcessedOrderNumbers.length} orders. Status will be updated after API calls.`);
           successCount++;
           
           // Execute packing slip and message cards processing
-          console.log(`Executing packing-message script with ${successfulLogisticsOrders.length} orders...`);
-          const packingMessageParams = { ...this.requestParams, orderNumbers: successfulLogisticsOrders, finalBatchNumbers: finalBatchNumbers };
+          console.log(`Executing packing-message script with ${successfulLogisticsOrderIds.length} orders...`);
+          const packingMessageParams = { ...this.requestParams, orderIds: successfulLogisticsOrderIds, orderNumbers: successfulLogisticsOrderNumbers, finalBatchNumbers: finalBatchNumbers };
           
           const packingMessageResult = await scriptExecutor.executeScript('packing_message', this.SCRIPTS_CONFIG.packing_message, packingMessageParams);
-          
+
           if (packingMessageResult.success) {
             let packingMessageDataWithBatch = this.addBatchInfoToPackingData(packingMessageResult.data, finalBatchNumbers, deliveryDate);
-            
+
             const combinedData = ResponseFormatter.combinePersonalizedAndPackingMessage(tempPersonalizedData, packingMessageDataWithBatch);
             results['personalized_packingslip_notes'] = combinedData;
-            
+
             const { data: packingMessageData, processedOrderNumbers: packingMessageProcessedOrderNumbers, scriptKey: packingMessageScriptKey, ...packingMessageExecutionInfo } = packingMessageResult;
             executionDetails['packing_message'] = packingMessageExecutionInfo;
-            
-            this.updateTrackingArrayPacking(packingMessageProcessedOrderNumbers, packingMessageDataWithBatch, orderTrackingArray, false);
+
+            // Store processed order numbers for later status update after API calls
+            console.log(`✅ Packing-message script succeeded. Processed ${packingMessageProcessedOrderNumbers.length} orders. Status will be updated after API calls.`);
             successCount++;
           } else {
             results['personalized_packingslip_notes'] = tempPersonalizedData;
@@ -714,47 +741,8 @@ class OrderProcessingPipeline {
     return data;
   }
 
-  updateTrackingArrayPersonalized(processedOrderNumbers, orderTrackingArray, personalizedApiSuccess = false) {
-    if (processedOrderNumbers && processedOrderNumbers.length > 0) {
-      processedOrderNumbers.forEach(orderNumber => {
-        const trackingEntry = orderTrackingArray.find(entry => entry.order_number === orderNumber);
-        if (trackingEntry) {
-          // Only set to true if both script succeeded AND API calls succeeded
-          trackingEntry.personalized_status = personalizedApiSuccess;
-        }
-      });
-      console.log(`Updated personalized_status for ${processedOrderNumbers.length} orders: ${personalizedApiSuccess ? 'SUCCESS' : 'API CALLS SKIPPED'}`);
-    }
-  }
-
-  updateTrackingArrayPacking(processedOrderNumbers, packingMessageDataWithBatch, orderTrackingArray, personalizedApiSuccess = false) {
-    if (processedOrderNumbers && processedOrderNumbers.length > 0) {
-      processedOrderNumbers.forEach(orderNumber => {
-        const trackingEntry = orderTrackingArray.find(entry => entry.order_number === orderNumber);
-        if (trackingEntry) {
-          if (personalizedApiSuccess) {
-            // Only check for actual data if API calls succeeded
-            const hasPackingSlip = packingMessageDataWithBatch.some(locationData =>
-              locationData.packing_slips_data &&
-              locationData.packing_slips_data.some(order => order.order_number === orderNumber)
-            );
-            const hasMessageCard = packingMessageDataWithBatch.some(locationData =>
-              locationData.message_cards_data &&
-              locationData.message_cards_data.some(message => message.order_number === orderNumber)
-            );
-
-            trackingEntry.packing_slip_status = hasPackingSlip;
-            trackingEntry.message_cards_status = hasMessageCard;
-          } else {
-            // If API calls were skipped, set status to false
-            trackingEntry.packing_slip_status = false;
-            trackingEntry.message_cards_status = false;
-          }
-        }
-      });
-      console.log(`Updated packing slip and message cards status for ${processedOrderNumbers.length} orders: ${personalizedApiSuccess ? 'SUCCESS' : 'API CALLS SKIPPED'}`);
-    }
-  }
+  // Removed updateTrackingArrayPersonalized and updateTrackingArrayPacking methods
+  // Status is now updated in updateTrackingArrayWithApiResults after API calls complete
 
   handlePersonalizedFailure(personalizedResult, results, executionDetails) {
     results['personalized_packingslip_notes'] = null;
@@ -860,19 +848,23 @@ class OrderProcessingPipeline {
     console.log(`📊 executeFosUpdate_flag: ${executeFosUpdate_flag} (dev_mode[3] = '${this.requestParams.dev_mode[3]}')`);
 
     if (orderTrackingArray.length > 0) {
-      const ordersForPersonalized = orderTrackingArray
+      const ordersForFosIds = orderTrackingArray
+        .filter(entry => entry.gopeople_status === true || entry.auspost_status === true)
+        .map(entry => entry.id);
+
+      const ordersForFosNumbers = orderTrackingArray
         .filter(entry => entry.gopeople_status === true || entry.auspost_status === true)
         .map(entry => entry.order_number);
 
-      console.log(`📋 Orders with successful logistics status: ${ordersForPersonalized.length}`);
+      console.log(`📋 Orders with successful logistics status: ${ordersForFosIds.length}`);
 
-      if (ordersForPersonalized.length > 0 && executeFosUpdate_flag) {
+      if (ordersForFosIds.length > 0 && executeFosUpdate_flag) {
         console.log(`✅ Decision: EXECUTING FOS Update calls`);
         console.log(`=== END FOS UPDATE API DECISION ===\n`);
 
-        const fosExtendedParams = { ...this.requestParams, orderNumbers: ordersForPersonalized };
+        const fosExtendedParams = { ...this.requestParams, orderIds: ordersForFosIds, orderNumbers: ordersForFosNumbers };
 
-        console.log(`Executing FOS_update script with ${ordersForPersonalized.length} orders that went to personalized...`);
+        console.log(`Executing FOS_update script with ${ordersForFosIds.length} orders that went to personalized...`);
         const fosUpdateResult = await scriptExecutor.executeScript('fos_update', this.SCRIPTS_CONFIG.fos_update, fosExtendedParams);
         
         if (fosUpdateResult.success) {
@@ -1283,63 +1275,98 @@ class OrderProcessingPipeline {
   }
 
   updateTrackingArrayWithApiResults(orderTrackingArray, personalizedApiResults) {
-    console.log('Updating tracking array with API results...');
+    console.log('\n🔄 === UPDATING TRACKING ARRAY WITH API RESULTS ===');
+    console.log(`API Results available: ${personalizedApiResults ? 'YES' : 'NO'}`);
+    console.log(`API Success: ${personalizedApiResults?.success || false}`);
 
     const apiSuccess = personalizedApiResults && personalizedApiResults.success;
-    const ordersWithPersonalizedData = [];
+    const ordersWithPersonalizedData = new Set();
+    const ordersWithPackingSlips = new Set();
+    const ordersWithMessageCards = new Set();
 
     if (apiSuccess && personalizedApiResults.apiResults) {
       // Extract order numbers that were successfully processed by the API
-      // by parsing the personalized_packingslip_notes data
       try {
         const personalizedData = personalizedApiResults.apiResults.processedEndpoints;
+        console.log(`Processing ${personalizedData.length} API endpoint results...`);
+
         personalizedData.forEach(endpointResult => {
           if (endpointResult.success && endpointResult.entryObject) {
-            // Extract order numbers from the entry object
             const entryData = endpointResult.entryObject;
 
-            // Check for order numbers in different data types
-            ['packing_slips_data', 'message_cards_data', 'jars_luxe_data', 'jars_classic_large_data', 'prosecco_data', 'candles_plants_data'].forEach(dataType => {
-              if (entryData[dataType] && Array.isArray(entryData[dataType])) {
-                entryData[dataType].forEach(item => {
-                  if (item.order_number) {
-                    ordersWithPersonalizedData.push(item.order_number);
-                  }
-                  if (item.message_cards_data1 && item.message_cards_data1.order_number) {
-                    ordersWithPersonalizedData.push(item.message_cards_data1.order_number);
-                  }
-                  if (item.message_cards_data2 && item.message_cards_data2.order_number) {
-                    ordersWithPersonalizedData.push(item.message_cards_data2.order_number);
-                  }
-                  if (item.message_cards_data3 && item.message_cards_data3.order_number) {
-                    ordersWithPersonalizedData.push(item.message_cards_data3.order_number);
+            // Extract from packing slips
+            if (entryData.packing_slips_data && Array.isArray(entryData.packing_slips_data)) {
+              entryData.packing_slips_data.forEach(item => {
+                if (item.order_number) {
+                  ordersWithPackingSlips.add(item.order_number);
+                  ordersWithPersonalizedData.add(item.order_number);
+                }
+              });
+            }
+
+            // Extract from message cards (batched data)
+            if (entryData.message_cards_data && Array.isArray(entryData.message_cards_data)) {
+              entryData.message_cards_data.forEach(batch => {
+                // Each batch can have multiple message_cards_data1, message_cards_data2, etc.
+                Object.keys(batch).forEach(key => {
+                  if (key.startsWith('message_cards_data') && batch[key].order_number) {
+                    ordersWithMessageCards.add(batch[key].order_number);
+                    ordersWithPersonalizedData.add(batch[key].order_number);
                   }
                 });
+              });
+            }
+
+            // Extract from personalized items (jars, candles, prosecco)
+            ['jars_luxe_data', 'jars_classic_large_data', 'prosecco_data', 'candles_plants_data', 'polaroid_photo_data'].forEach(dataType => {
+              if (entryData[dataType] && Array.isArray(entryData[dataType])) {
+                // These don't have order_number, but their presence indicates processing
+                // We'll mark orders as having personalized data if they appear in any category
+                console.log(`Found ${dataType} with ${entryData[dataType].length} batches`);
               }
             });
           }
         });
+
+        console.log(`📊 Extracted order numbers:`);
+        console.log(`  - With packing slips: ${ordersWithPackingSlips.size}`);
+        console.log(`  - With message cards: ${ordersWithMessageCards.size}`);
+        console.log(`  - With personalized data: ${ordersWithPersonalizedData.size}`);
       } catch (error) {
-        console.error('Error parsing API results for tracking update:', error);
+        console.error('❌ Error parsing API results for tracking update:', error);
       }
     }
 
     // Update tracking array based on API success
+    let updatedCount = 0;
     orderTrackingArray.forEach(entry => {
-      if (apiSuccess && ordersWithPersonalizedData.includes(entry.order_number)) {
-        // API succeeded and this order was processed
-        console.log(`Order ${entry.order_number}: API calls succeeded`);
-        // Status was already set correctly during script processing
+      if (apiSuccess) {
+        // API succeeded - set status based on actual data
+        const hasPackingSlip = ordersWithPackingSlips.has(entry.order_number);
+        const hasMessageCard = ordersWithMessageCards.has(entry.order_number);
+        const hasPersonalized = ordersWithPersonalizedData.has(entry.order_number);
+
+        entry.packing_slip_status = hasPackingSlip;
+        entry.message_cards_status = hasMessageCard;
+        entry.personalized_status = hasPersonalized;
+
+        if (hasPackingSlip || hasMessageCard || hasPersonalized) {
+          updatedCount++;
+          console.log(`✅ Order ${entry.order_number}: packing=${hasPackingSlip}, message=${hasMessageCard}, personalized=${hasPersonalized}`);
+        }
       } else {
-        // API was skipped or failed, set all personalized-related status to false
-        console.log(`Order ${entry.order_number}: API calls ${apiSuccess ? 'succeeded but order not processed' : 'skipped/failed'}`);
+        // API was skipped or failed - set all to false
         entry.personalized_status = false;
         entry.packing_slip_status = false;
         entry.message_cards_status = false;
       }
     });
 
-    console.log(`Updated tracking array based on API success: ${apiSuccess ? 'SUCCESS' : 'FAILED/SKIPPED'}`);
+    console.log(`\n📈 Tracking array update summary:`);
+    console.log(`  - Total orders: ${orderTrackingArray.length}`);
+    console.log(`  - Orders with successful processing: ${updatedCount}`);
+    console.log(`  - API Status: ${apiSuccess ? 'SUCCESS ✅' : 'FAILED/SKIPPED ❌'}`);
+    console.log(`=== END TRACKING ARRAY UPDATE ===\n`);
   }
 
   async executeGoogleSheetsWriteStep(orderTrackingArray, executeGoogleSheetsWrite_flag, results, executionDetails) {

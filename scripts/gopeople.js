@@ -102,13 +102,18 @@ function calculatePickupTime(location, deliveryDate) {
 
 // Transform function to convert query results to GoPeople API format
 function transform(rawData, deliveryDate) {
+  console.log(`\n🔄 === GOPEOPLE TRANSFORM STARTING ===`);
+  console.log(`📥 Total orders from database: ${rawData ? rawData.length : 0}`);
+
   if (!rawData || !Array.isArray(rawData)) {
+    console.log(`⚠️ No data to transform`);
+    console.log(`=== END GOPEOPLE TRANSFORM ===\n`);
     return [];
   }
-  
+
   const transformedOrders = [];
   const skippedOrders = [];
-  
+
   for (const row of rawData) {
     // Get the addressFrom based on location
     const addressFrom = LOCATION_ADDRESSES[row.location_name] || LOCATION_ADDRESSES['Melbourne'];
@@ -179,11 +184,17 @@ function transform(rawData, deliveryDate) {
   }
   
   // Log summary of processing
+  console.log(`\n📊 === GOPEOPLE TRANSFORM SUMMARY ===`);
+  console.log(`✅ Orders ready for API: ${transformedOrders.length}`);
+  console.log(`⏰ Orders skipped (past cutoff): ${skippedOrders.length}`);
+  console.log(`📈 Total processed: ${rawData.length} (${transformedOrders.length} ready + ${skippedOrders.length} skipped)`);
+
   if (skippedOrders.length > 0) {
-    console.log(`Processed ${transformedOrders.length} orders, skipped ${skippedOrders.length} orders due to cutoff times`);
-    console.log('Skipped orders:', skippedOrders);
+    console.log(`\n❌ Skipped order details:`, skippedOrders);
   }
-  
+
+  console.log(`=== END GOPEOPLE TRANSFORM ===\n`);
+
   return transformedOrders;
 }
 

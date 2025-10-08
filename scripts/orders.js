@@ -61,10 +61,11 @@ ORDER BY
 function transform(rawData) {
     console.log('Orders Transform: Processing', rawData.length, 'raw orders');
 
-    // Create array of objects with store, order_number, location, shop_id, and order_products
+    // Create array of objects with id, store, order_number, location, shop_id, and order_products
     const orderData = rawData
-        .filter(row => row.order_number && row.location_name) // Filter out any null/undefined values
+        .filter(row => row.id && row.order_number && row.location_name) // Filter out any null/undefined values
         .map(row => ({
+            id: row.id,  // Include unique database ID for filtering
             store: row.shop_id === 10 ? 'LVLY' : row.shop_id === 6 ? 'BL' : '',
             order_number: row.order_number,
             location: row.location_name,
@@ -72,8 +73,8 @@ function transform(rawData) {
             order_products: row.order_products || '' // Include order_products, default to empty string if null
         }))
         .filter((orderData, index, array) =>
-            // Remove duplicates based on order_number
-            array.findIndex(item => item.order_number === orderData.order_number) === index
+            // Remove duplicates based on id (which is unique)
+            array.findIndex(item => item.id === orderData.id) === index
         );
 
     console.log('Orders Transform: Processed', orderData.length, 'unique orders');

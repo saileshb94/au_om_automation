@@ -8,8 +8,12 @@ class GoPeopleApiService {
 
   async callGoPeopleAPI(orderData) {
     try {
-      console.log(`Calling GoPeople API for order: ${orderData.orderNumber}`);
-      // console.log(`Gopeople API payload:`, orderData.apiPayload);
+      console.log(`\n🚀 === GOPEOPLE API REQUEST ===`);
+      console.log(`Order Number: ${orderData.orderNumber}`);
+      console.log(`API URL: ${this.GOPEOPLE_API_URL}`);
+      console.log(`Request Payload:`, JSON.stringify(orderData.apiPayload, null, 2));
+      console.log(`=== END GOPEOPLE API REQUEST ===\n`);
+
       const response = await axios.post(
         this.GOPEOPLE_API_URL,
         orderData.apiPayload,
@@ -22,9 +26,19 @@ class GoPeopleApiService {
           timeout: 5000 // 5 second timeout
         }
       );
-      // console.log("GP Result: ", response.data.result);
-      // console.log("GP barcode: ", response.data.result.barcodes);
-      // console.log("GP to: ", response.data.result.addressTo);
+
+      console.log(`\n✅ === GOPEOPLE API RESPONSE ===`);
+      console.log(`Order Number: ${orderData.orderNumber}`);
+      console.log(`HTTP Status: ${response.status}`);
+      console.log(`Error Code: ${response.data.errorCode}`);
+      console.log(`Message: ${response.data.message}`);
+      if (response.data.result) {
+        console.log(`Job Number: ${response.data.result.number || 'N/A'}`);
+        console.log(`Barcodes:`, response.data.result.barcodes || 'N/A');
+        console.log(`Address To:`, JSON.stringify(response.data.result.addressTo, null, 2));
+      }
+      console.log(`Full Response Data:`, JSON.stringify(response.data, null, 2));
+      console.log(`=== END GOPEOPLE API RESPONSE ===\n`);
 
       const isSuccess = response.data.errorCode === 0 && (response.status === 200 || response.status === 201);
 
@@ -43,7 +57,18 @@ class GoPeopleApiService {
 
       return result;
     } catch (error) {
-      console.error(`GoPeople API call failed for order ${orderData.orderNumber}:`, error.message);
+      console.log(`\n❌ === GOPEOPLE API ERROR ===`);
+      console.log(`Order Number: ${orderData.orderNumber}`);
+      console.log(`Error Type: ${error.name || 'Unknown'}`);
+      console.log(`Error Message: ${error.message}`);
+      if (error.response) {
+        console.log(`HTTP Status: ${error.response.status}`);
+        console.log(`Response Data:`, JSON.stringify(error.response.data, null, 2));
+      }
+      if (error.code) {
+        console.log(`Error Code: ${error.code}`);
+      }
+      console.log(`=== END GOPEOPLE API ERROR ===\n`);
 
       return {
         orderNumber: orderData.orderNumber,

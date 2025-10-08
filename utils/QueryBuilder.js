@@ -7,17 +7,17 @@ class QueryBuilder {
     
     console.log('Building dynamic query for:', scriptKey);
 
-    // Handle FOS_update script specially
+    // Handle FOS_update script specially - use orderIds instead of orderNumbers
     if (scriptKey === 'fos_update') {
-      if (params.orderNumbers && params.orderNumbers.length > 0) {
-        const orderNumberPlaceholders = params.orderNumbers.map(() => '?').join(',');
-        query = query.replace('PLACEHOLDER_ORDER_NUMBERS', orderNumberPlaceholders);
-        queryParams.push(...params.orderNumbers);
-        console.log(`FOS_update: Built query for ${params.orderNumbers.length} order numbers`);
+      if (params.orderIds && params.orderIds.length > 0) {
+        const orderIdPlaceholders = params.orderIds.map(() => '?').join(',');
+        query = query.replace('PLACEHOLDER_ORDER_NUMBERS', orderIdPlaceholders);
+        queryParams.push(...params.orderIds);
+        console.log(`FOS_update: Built query for ${params.orderIds.length} order IDs`);
       } else {
-        // If no order numbers, create a query that won't affect any rows
-        query = query.replace('PLACEHOLDER_ORDER_NUMBERS', "'NO_ORDERS'");
-        console.log('FOS_update: No order numbers provided, using placeholder');
+        // If no order IDs, create a query that won't affect any rows
+        query = query.replace('PLACEHOLDER_ORDER_NUMBERS', '0');
+        console.log('FOS_update: No order IDs provided, using placeholder');
       }
       return { query, params: queryParams };
     }
@@ -30,13 +30,13 @@ class QueryBuilder {
         queryParams.push(deliveryDate);
       }
 
-      // Add order numbers filter if provided
-      if (params.orderNumbers && params.orderNumbers.length > 0) {
-        const orderNumberPlaceholders = params.orderNumbers.map(() => '?').join(',');
+      // Add order IDs filter if provided
+      if (params.orderIds && params.orderIds.length > 0) {
+        const orderIdPlaceholders = params.orderIds.map(() => '?').join(',');
         // Insert filter in WHERE clause (before GROUP BY), not after
-        query = query.replace(/(WHERE[\s\S]*?)(GROUP BY)/i, `$1 AND so.order_number IN (${orderNumberPlaceholders}) $2`);
-        queryParams.push(...params.orderNumbers);
-        console.log(`Packing-Message: Built query for ${params.orderNumbers.length} order numbers`);
+        query = query.replace(/(WHERE[\s\S]*?)(GROUP BY)/i, `$1 AND so.id IN (${orderIdPlaceholders}) $2`);
+        queryParams.push(...params.orderIds);
+        console.log(`Packing-Message: Built query for ${params.orderIds.length} order IDs`);
       }
 
       return { query, params: queryParams };
@@ -158,12 +158,12 @@ class QueryBuilder {
       console.log('Orders: No location filter specified, using all locations from hardcoded IN clause');
     }
     
-    // Handle order numbers parameter for personalized, gopeople, and auspost scripts
-    if (params.orderNumbers && params.orderNumbers.length > 0) {
+    // Handle order IDs parameter for personalized, gopeople, and auspost scripts
+    if (params.orderIds && params.orderIds.length > 0) {
       if (scriptKey === 'personalized') {
-        console.log('Adding order numbers filter for personalized:', params.orderNumbers.length, 'orders');
+        console.log('Adding order IDs filter for personalized:', params.orderIds.length, 'orders');
 
-        const orderNumberPlaceholders = params.orderNumbers.map(() => '?').join(',');
+        const orderIdPlaceholders = params.orderIds.map(() => '?').join(',');
 
         const mainWhereMatch = query.match(/(WHERE[\s\S]*?)(ORDER BY|$)/i);
         if (mainWhereMatch) {
@@ -173,13 +173,13 @@ class QueryBuilder {
           const beforeWhere = query.substring(0, insertPoint);
           const afterWhere = query.substring(insertPoint);
 
-          query = beforeWhere + ` AND so.order_number IN (${orderNumberPlaceholders}) ` + afterWhere;
-          queryParams.push(...params.orderNumbers);
+          query = beforeWhere + ` AND so.id IN (${orderIdPlaceholders}) ` + afterWhere;
+          queryParams.push(...params.orderIds);
         }
       } else if (scriptKey === 'gopeople') {
-        console.log('Adding order numbers filter for gopeople:', params.orderNumbers.length, 'orders');
+        console.log('Adding order IDs filter for gopeople:', params.orderIds.length, 'orders');
 
-        const orderNumberPlaceholders = params.orderNumbers.map(() => '?').join(',');
+        const orderIdPlaceholders = params.orderIds.map(() => '?').join(',');
 
         const mainWhereMatch = query.match(/(WHERE[\s\S]*?)(ORDER BY|$)/i);
         if (mainWhereMatch) {
@@ -189,13 +189,13 @@ class QueryBuilder {
           const beforeWhere = query.substring(0, insertPoint);
           const afterWhere = query.substring(insertPoint);
 
-          query = beforeWhere + ` AND so.order_number IN (${orderNumberPlaceholders}) ` + afterWhere;
-          queryParams.push(...params.orderNumbers);
+          query = beforeWhere + ` AND so.id IN (${orderIdPlaceholders}) ` + afterWhere;
+          queryParams.push(...params.orderIds);
         }
       } else if (scriptKey === 'auspost') {
-        console.log('Adding order numbers filter for auspost:', params.orderNumbers.length, 'orders');
+        console.log('Adding order IDs filter for auspost:', params.orderIds.length, 'orders');
 
-        const orderNumberPlaceholders = params.orderNumbers.map(() => '?').join(',');
+        const orderIdPlaceholders = params.orderIds.map(() => '?').join(',');
 
         const mainWhereMatch = query.match(/(WHERE[\s\S]*?)(ORDER BY|$)/i);
         if (mainWhereMatch) {
@@ -205,8 +205,8 @@ class QueryBuilder {
           const beforeWhere = query.substring(0, insertPoint);
           const afterWhere = query.substring(insertPoint);
 
-          query = beforeWhere + ` AND so.order_number IN (${orderNumberPlaceholders}) ` + afterWhere;
-          queryParams.push(...params.orderNumbers);
+          query = beforeWhere + ` AND so.id IN (${orderIdPlaceholders}) ` + afterWhere;
+          queryParams.push(...params.orderIds);
         }
       }
     }

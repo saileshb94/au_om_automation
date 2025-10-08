@@ -23,6 +23,15 @@ class ScriptExecutorService {
         console.log(`=== END ORDERS SCRIPT SQL QUERY ===\n`);
       }
 
+      // Log the final SQL query for gopeople script
+      if (scriptKey === 'gopeople') {
+        console.log(`\n🚚 === GOPEOPLE SCRIPT SQL QUERY ===`);
+        console.log(query);
+        console.log(`Query Parameters:`, params);
+        console.log(`Number of orders being queried: ${params.length}`);
+        console.log(`=== END GOPEOPLE SCRIPT SQL QUERY ===\n`);
+      }
+
       // Execute SQL query with parameters
       const [rawResults] = await this.connection.execute(query, params);
       console.log(`Raw results count for ${scriptKey}:`, rawResults.length);

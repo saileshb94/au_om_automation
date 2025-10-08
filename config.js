@@ -13,6 +13,12 @@
 const GOPEOPLE_API_URL = 'http://api-demo.gopeople.com.au/book/instant';
 
 /**
+ * GoPeople Timeframe API URL
+ * Used to query shift availability within a date range
+ */
+const GOPEOPLE_TIMEFRAME_API_URL = 'http://api-demo.gopeople.com.au/shift';
+
+/**
  * Location-based warehouse/pickup addresses for GoPeople API
  * These are the "addressFrom" locations for each fulfillment center
  */
@@ -715,6 +721,7 @@ const GOOGLE_SHEETS_CONFIG = {
 module.exports = {
   // GoPeople module exports
   GOPEOPLE_API_URL,
+  GOPEOPLE_TIMEFRAME_API_URL,
   LOCATION_ADDRESSES,
   LOCATION_TIMEZONES,
   GOPEOPLE_PARCEL_DEFAULTS,
