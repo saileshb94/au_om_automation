@@ -81,6 +81,9 @@ const SCRIPTS_CONFIG = {
 // Apply CORS middleware
 app.use(corsMiddleware);
 
+// Parse JSON request bodies
+app.use(express.json());
+
 // Set up routes
 OrderProcessingRoutes.createRoutes(app, dbConfig, gopeopleConfig, auspostConfig, SCRIPTS_CONFIG);
 

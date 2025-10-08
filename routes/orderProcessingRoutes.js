@@ -63,6 +63,77 @@ class OrderProcessingRoutes {
       }
     });
 
+    // FOS process orders endpoint
+    app.post('/fos-process-orders', async (req, res) => {
+      try {
+        const { date, dev_mode, is_same_day, time_frame } = req.query;
+        const orders = req.body;
+
+        // Validate required parameters
+        if (!date || !dev_mode || is_same_day === undefined) {
+          return res.status(400).json({
+            success: false,
+            error: 'Missing required parameters: date, dev_mode, and is_same_day are all required'
+          });
+        }
+
+        // Validate is_same_day is 0 or 1
+        const isSameDayNum = parseInt(is_same_day);
+        if (isSameDayNum !== 0 && isSameDayNum !== 1) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid is_same_day parameter: must be 0 or 1'
+          });
+        }
+
+        // Validate date format (basic YYYY-MM-DD check)
+        const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+        if (!datePattern.test(date)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid date format: must be YYYY-MM-DD'
+          });
+        }
+
+        // Validate orders is an array
+        if (!Array.isArray(orders)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid request body: must be an array of order objects'
+          });
+        }
+
+        console.log(`FOS process orders request - date: ${date}, dev_mode: ${dev_mode}, is_same_day: ${is_same_day}, time_frame: ${time_frame || 'not provided'}`);
+        console.log(`Orders count: ${orders.length}`);
+
+        // Return success response with received parameters
+        const responseParams = {
+          date: date,
+          dev_mode: dev_mode,
+          is_same_day: isSameDayNum
+        };
+
+        if (time_frame) {
+          responseParams.time_frame = time_frame;
+        }
+
+        res.status(200).json({
+          success: true,
+          message: 'Request received successfully',
+          receivedParams: responseParams,
+          orderCount: orders.length,
+          orders: orders
+        });
+
+      } catch (error) {
+        console.error('FOS process orders endpoint error:', error.message);
+        res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+    });
+
     // Test endpoint for polaroid image processing
     app.get('/test-polaroid', async (req, res) => {
       try {
