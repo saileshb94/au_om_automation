@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { AUSPOST_LABELS_CONFIG } = require('../config');
 
 class AuspostApiService {
   constructor(lvlyConfig, bloomerooConfig) {
@@ -235,13 +236,19 @@ class AuspostApiService {
     };
   }
 
-  /**
-   * Process successful AusPost orders for label generation
+  // ============================================================================
+  // OLD LABEL GENERATION METHODS (COMMENTED OUT - DO NOT DELETE)
+  // These methods used DocuPilot API for label generation
+  // Kept for reference and potential rollback
+  // ============================================================================
+
+  /*
+   * OLD METHOD - Process successful AusPost orders for label generation
    * Groups orders by location and transforms payload + response into label format
    * @param {Array} successfulOrders - Array of successful order results from AusPost API
    * @param {Object} finalBatchNumbers - Batch numbers per location
    * @returns {Object} Labels data grouped by location
-   */
+
   processLabelsData(successfulOrders, finalBatchNumbers) {
     if (!successfulOrders || successfulOrders.length === 0) {
       console.log('ℹ️  No successful AusPost orders to process for labels');
@@ -300,12 +307,12 @@ class AuspostApiService {
     return labelsByLocation;
   }
 
-  /**
+  /*
    * Transform AusPost API request/response into label format
    * Maps fields according to specification
    * @param {Object} order - Order result with requestPayload and responseData
    * @returns {Object} Transformed label data
-   */
+
   transformToLabelFormat(order) {
     try {
       const payload = order.requestPayload;
@@ -377,6 +384,228 @@ class AuspostApiService {
       console.error(`❌ Error transforming order ${order.orderNumber} to label format:`, error.message);
       return null;
     }
+  }
+  */
+
+  // ============================================================================
+  // NEW LABEL GENERATION METHODS
+  // Uses AusPost Labels API to generate labels and download PDFs
+  // ============================================================================
+
+  /**
+   * Extract shipment_id and item_id from successful AusPost API responses
+   * @param {Array} successfulOrders - Array of successful order results from AusPost API
+   * @returns {Array} Array of {shipment_id, item_id, orderNumber, location, deliveryDate, shop_id}
+   */
+  extractShipmentItemIds(successfulOrders) {
+    console.log(`\n🔍 === EXTRACTING SHIPMENT/ITEM IDs ===`);
+    console.log(`Processing ${successfulOrders.length} successful orders`);
+
+    const extractedData = [];
+
+    for (const order of successfulOrders) {
+      try {
+        // Navigate to shipment and item data in response
+        const shipment = order.responseData?.shipments?.[0];
+        const item = shipment?.items?.[0];
+
+        if (!shipment || !item) {
+          console.warn(`⚠️  Order ${order.orderNumber}: Missing shipment or item data in response`);
+          continue;
+        }
+
+        const shipmentId = shipment.shipment_id;
+        const itemId = item.item_id;
+
+        if (!shipmentId || !itemId) {
+          console.warn(`⚠️  Order ${order.orderNumber}: Missing shipment_id or item_id`);
+          continue;
+        }
+
+        extractedData.push({
+          shipment_id: shipmentId,
+          item_id: itemId,
+          orderNumber: order.orderNumber,
+          location: order.location,
+          deliveryDate: order.deliveryDate,
+          shop_id: order.shop_id
+        });
+
+        console.log(`✅ Extracted - Order: ${order.orderNumber}, Shipment: ${shipmentId}, Item: ${itemId}`);
+      } catch (error) {
+        console.error(`❌ Error extracting IDs for order ${order.orderNumber}:`, error.message);
+      }
+    }
+
+    console.log(`\n📊 Extraction Summary:`);
+    console.log(`  Total orders processed: ${successfulOrders.length}`);
+    console.log(`  Successfully extracted: ${extractedData.length}`);
+    console.log(`  Failed: ${successfulOrders.length - extractedData.length}`);
+    console.log(`=== END EXTRACTION ===\n`);
+
+    return extractedData;
+  }
+
+  /**
+   * Call AusPost Labels API to generate labels
+   * @param {Array} shipmentItems - Array of {shipment_id, item_id} objects
+   * @param {Object} credentials - AusPost credentials (authorization, accountNumber)
+   * @returns {Promise<Object>} API response with label URLs
+   */
+  async callLabelsAPI(shipmentItems, credentials) {
+    console.log(`\n📮 === CALLING AUSPOST LABELS API ===`);
+    console.log(`Generating labels for ${shipmentItems.length} shipments`);
+
+    // Build the API payload
+    const payload = {
+      wait_for_label_url: AUSPOST_LABELS_CONFIG.wait_for_label_url,
+      unlabelled_articles_only: AUSPOST_LABELS_CONFIG.unlabelled_articles_only,
+      preferences: AUSPOST_LABELS_CONFIG.preferences,
+      shipments: shipmentItems.map(item => ({
+        shipment_id: item.shipment_id,
+        items: [{ item_id: item.item_id }]
+      }))
+    };
+
+    console.log(`\n📦 Request Payload:`);
+    console.log(`  URL: ${AUSPOST_LABELS_CONFIG.apiUrl}`);
+    console.log(`  Shipments count: ${payload.shipments.length}`);
+    console.log(`  Wait for label URL: ${payload.wait_for_label_url}`);
+    // console.log(`\n📋 Full Payload:`, JSON.stringify(payload, null, 2));
+
+    try {
+      const response = await axios.post(
+        AUSPOST_LABELS_CONFIG.apiUrl,
+        payload,
+        {
+          headers: {
+            'Account-Number': credentials.accountNumber,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': credentials.authorization
+          },
+          timeout: AUSPOST_LABELS_CONFIG.timeout
+        }
+      );
+
+      console.log(`\n✅ === AUSPOST LABELS API SUCCESS ===`);
+      console.log(`Status Code: ${response.status}`);
+      console.log(`Response:`, JSON.stringify(response.data, null, 2));
+      console.log(`=== END LABELS API RESPONSE ===\n`);
+
+      return {
+        success: true,
+        httpStatus: response.status,
+        data: response.data
+      };
+
+    } catch (error) {
+      console.error(`\n❌ === AUSPOST LABELS API ERROR ===`);
+      console.error(`Error Type: ${error.name}`);
+      console.error(`Error Message: ${error.message}`);
+
+      if (error.response) {
+        console.error(`HTTP Status: ${error.response.status}`);
+        console.error(`Response Data:`, JSON.stringify(error.response.data, null, 2));
+      }
+
+      console.error(`=== END LABELS API ERROR ===\n`);
+
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message,
+        httpStatus: error.response?.status || 0,
+        errorDetails: error.response?.data || null
+      };
+    }
+  }
+
+  /**
+   * Process successful orders for new label generation flow
+   * Groups orders by location, calls Labels API, and returns label URLs
+   * @param {Array} successfulOrders - Array of successful order results from AusPost API
+   * @param {Object} finalBatchNumbers - Batch numbers per location
+   * @returns {Object} Label URLs grouped by location with metadata
+   */
+  async processNewLabelsGeneration(successfulOrders, finalBatchNumbers) {
+    if (!successfulOrders || successfulOrders.length === 0) {
+      console.log('ℹ️  No successful AusPost orders to process for labels');
+      return {};
+    }
+
+    console.log(`\n🏷️  === NEW AUSPOST LABELS GENERATION PROCESS ===`);
+    console.log(`📊 Processing ${successfulOrders.length} successful orders for label generation`);
+
+    // Step 1: Extract shipment_id and item_id from all successful orders
+    const extractedData = this.extractShipmentItemIds(successfulOrders);
+
+    if (extractedData.length === 0) {
+      console.log('❌ No valid shipment/item IDs extracted');
+      return {};
+    }
+
+    // Step 2: Group by location
+    const ordersByLocation = {};
+    extractedData.forEach(item => {
+      if (!ordersByLocation[item.location]) {
+        ordersByLocation[item.location] = [];
+      }
+      ordersByLocation[item.location].push(item);
+    });
+
+    console.log(`\n📍 Grouped orders into ${Object.keys(ordersByLocation).length} locations`);
+
+    // Step 3: Call Labels API for each location
+    const labelsByLocation = {};
+
+    for (const [location, items] of Object.entries(ordersByLocation)) {
+      console.log(`\n📍 === Processing ${location} with ${items.length} items ===`);
+
+      // Get credentials for the first order in this location (all should have same shop_id)
+      const sampleOrder = successfulOrders.find(o => o.location === location);
+      const credentials = this.getCredentials(sampleOrder.shop_id, location);
+
+      // Call Labels API
+      const apiResult = await this.callLabelsAPI(items, credentials);
+
+      if (apiResult.success) {
+        // Extract label URL from response
+        const labelUrl = apiResult.data?.labels?.[0]?.url;
+
+        if (labelUrl) {
+          const deliveryDate = sampleOrder?.deliveryDate || new Date().toISOString().split('T')[0];
+          const batch = finalBatchNumbers ? finalBatchNumbers[location] : 1;
+
+          labelsByLocation[location] = {
+            location: location,
+            delivery_date: deliveryDate,
+            batch: batch,
+            label_url: labelUrl,
+            items_count: items.length,
+            orders: items.map(i => i.orderNumber),
+            shop_id: sampleOrder.shop_id,
+            apiResponse: apiResult.data
+          };
+
+          console.log(`✅ ${location}: Label URL received - ${labelUrl}`);
+        } else {
+          console.warn(`⚠️  ${location}: No label URL in API response`);
+        }
+      } else {
+        console.error(`❌ ${location}: Labels API call failed - ${apiResult.error}`);
+      }
+
+      // Small delay between API calls
+      if (Object.keys(ordersByLocation).length > 1) {
+        console.log(`⏳ Waiting 500ms before next location...`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    console.log(`\n🎉 Labels generation completed for ${Object.keys(labelsByLocation).length} locations`);
+    console.log(`=== END NEW LABELS GENERATION ===\n`);
+
+    return labelsByLocation;
   }
 }
 

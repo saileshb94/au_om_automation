@@ -172,18 +172,19 @@ class GoPeopleApiService {
 
     Object.keys(ordersByLocation).forEach(location => {
       const orders = ordersByLocation[location];
-      const batches = [];
 
       console.log(`Processing ${location} with ${orders.length} orders`);
+
+      // Get delivery date from first successful order for this location
+      const sampleOrder = successfulOrders.find(o => o.location === location);
+      const deliveryDate = sampleOrder?.deliveryDate || new Date().toISOString().split('T')[0];
+
+      const gpLabelsDataArray = [];
 
       // Create batches of 12 orders each
       for (let i = 0; i < orders.length; i += 12) {
         const batchOrders = orders.slice(i, i + 12);
         const batchNumber = Math.floor(i / 12) + 1;
-
-        // Get delivery date from first successful order for this location
-        const sampleOrder = successfulOrders.find(o => o.location === location);
-        const deliveryDate = sampleOrder?.deliveryDate || new Date().toISOString().split('T')[0];
 
         // Convert array to object with gp1, gp2, gp3 keys
         const gpLabelsDataObject = {};
@@ -191,22 +192,21 @@ class GoPeopleApiService {
           const key = `gp${index + 1}`;
           gpLabelsDataObject[key] = order;
         });
+        gpLabelsDataArray.push(gpLabelsDataObject);
 
-        const batchData = {
-          location: location,
-          delivery_date: deliveryDate,
-          batch: finalBatchNumbers ? finalBatchNumbers[location] : 1,
-          gp_labels_data: [gpLabelsDataObject]
-        };
-
-        batches.push(batchData);
         console.log(`  Created batch ${batchNumber} with ${batchOrders.length} orders`);
       }
 
-      if (batches.length > 0) {
-        labelsByLocation[location] = batches;
-        console.log(`✅ Created ${batches.length} label batches for ${location}`);
-      }
+      // Create single batch data per location (after processing all orders)
+      const batchData = {
+        location: location,
+        delivery_date: deliveryDate,
+        batch: finalBatchNumbers ? finalBatchNumbers[location] : 1,
+        gp_labels_data: gpLabelsDataArray
+      };
+
+      labelsByLocation[location] = [batchData];
+      console.log(`✅ Created label batches for ${location} with ${orders.length} total orders`);
     });
 
     return labelsByLocation;

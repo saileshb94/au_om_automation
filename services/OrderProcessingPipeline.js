@@ -6,6 +6,8 @@ const AuspostApiService = require('./AuspostApiService');
 const PersonalizedApiService = require('./personalized-api-service');
 const GpLabelsApiService = require('./gp-labels-api-service');
 const AuspostLabelsApiService = require('./auspost-labels-api-service');
+const AuspostLabelsDownloadService = require('./AuspostLabelsDownloadService');
+const ProductTallyService = require('./ProductTallyService');
 const GoogleDriveService = require('../gdrive-service');
 const GoogleSheetsService = require('./GoogleSheetsService');
 const DateHelper = require('../utils/DateHelper');
@@ -27,21 +29,25 @@ class OrderProcessingPipeline {
     this.personalizedApiService = new PersonalizedApiService();
     this.gpLabelsApiService = new GpLabelsApiService();
     this.auspostLabelsApiService = new AuspostLabelsApiService();
+    this.auspostLabelsDownloadService = new AuspostLabelsDownloadService();
+    this.productTallyService = new ProductTallyService();
     this.googleSheetsService = new GoogleSheetsService();
   }
 
   async execute() {
     const overallStartTime = Date.now();
     const requestId = `REQ-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const isManualMode = this.requestParams.isManualProcessing === true;
     let connection;
 
     try {
       console.log('\n' + '='.repeat(80));
       console.log(`🚀 NEW REQUEST STARTED - ID: ${requestId}`);
+      console.log(`Processing Mode: ${isManualMode ? '🔧 MANUAL' : '🤖 AUTOMATIC'}`);
       console.log('='.repeat(80));
       console.log('Request parameters:', this.requestParams);
       
-      // Parse dev_mode flags (5-digit format: gopeople, personalized_api, gp_labels_api, fos_update, google_sheets)
+      // Parse dev_mode flags (6-digit format: gopeople, personalized_api, gp_labels_api, product_tally, fos_update, google_sheets)
       console.log(`\n🔍 === DEV MODE PARSING DEBUG ===`);
       console.log(`Raw dev_mode parameter:`, this.requestParams.dev_mode);
       console.log(`Type of dev_mode:`, typeof this.requestParams.dev_mode);
@@ -57,18 +63,20 @@ class OrderProcessingPipeline {
       const executeGoPeopleApiCalls_flag = this.requestParams.dev_mode[0] === '1';
       const executePersonalizedApiCalls_flag = this.requestParams.dev_mode[1] === '1';
       const executeGpLabelsApiCalls_flag = this.requestParams.dev_mode[2] === '1';
-      const executeFosUpdate_flag = this.requestParams.dev_mode[3] === '1';
-      const executeGoogleSheetsWrite_flag = this.requestParams.dev_mode[4] === '1';
+      const executeProductTallyApiCalls_flag = this.requestParams.dev_mode[3] === '1';
+      const executeFosUpdate_flag = this.requestParams.dev_mode[4] === '1';
+      const executeGoogleSheetsWrite_flag = this.requestParams.dev_mode[5] === '1';
 
       console.log(`\nFlag assignments:`);
       console.log(`  dev_mode[0] = "${this.requestParams.dev_mode[0]}" → executeGoPeopleApiCalls_flag: ${executeGoPeopleApiCalls_flag}`);
       console.log(`  dev_mode[1] = "${this.requestParams.dev_mode[1]}" → executePersonalizedApiCalls_flag: ${executePersonalizedApiCalls_flag}`);
       console.log(`  dev_mode[2] = "${this.requestParams.dev_mode[2]}" → executeGpLabelsApiCalls_flag: ${executeGpLabelsApiCalls_flag}`);
-      console.log(`  dev_mode[3] = "${this.requestParams.dev_mode[3]}" → executeFosUpdate_flag: ${executeFosUpdate_flag}`);
-      console.log(`  dev_mode[4] = "${this.requestParams.dev_mode[4]}" → executeGoogleSheetsWrite_flag: ${executeGoogleSheetsWrite_flag}`);
+      console.log(`  dev_mode[3] = "${this.requestParams.dev_mode[3]}" → executeProductTallyApiCalls_flag: ${executeProductTallyApiCalls_flag}`);
+      console.log(`  dev_mode[4] = "${this.requestParams.dev_mode[4]}" → executeFosUpdate_flag: ${executeFosUpdate_flag}`);
+      console.log(`  dev_mode[5] = "${this.requestParams.dev_mode[5]}" → executeGoogleSheetsWrite_flag: ${executeGoogleSheetsWrite_flag}`);
       console.log(`=== END DEV MODE PARSING DEBUG ===\n`);
 
-      console.log(`Dev mode flags - GoPeople API: ${executeGoPeopleApiCalls_flag}, Personalized API: ${executePersonalizedApiCalls_flag}, GP Labels API: ${executeGpLabelsApiCalls_flag}, FOS Update: ${executeFosUpdate_flag}, Google Sheets: ${executeGoogleSheetsWrite_flag}`);
+      console.log(`Dev mode flags - GoPeople API: ${executeGoPeopleApiCalls_flag}, Personalized API: ${executePersonalizedApiCalls_flag}, GP Labels API: ${executeGpLabelsApiCalls_flag}, Product Tally: ${executeProductTallyApiCalls_flag}, FOS Update: ${executeFosUpdate_flag}, Google Sheets: ${executeGoogleSheetsWrite_flag}`);
       
       // Format delivery date for batch management
       const deliveryDate = DateHelper.formatDate(this.requestParams.date);
@@ -208,6 +216,14 @@ class OrderProcessingPipeline {
       console.log(`\n[${requestId}] ━━━ STAGE 3.8: TRACKING ARRAY UPDATE ━━━`);
       this.updateTrackingArrayWithApiResults(orderTrackingArray, personalizedApiResults);
 
+      // Step 3.9: Execute Product Tally
+      console.log(`\n[${requestId}] ━━━ STAGE 3.9: PRODUCT TALLY ━━━`);
+      const productTallyResults = await this.executeProductTallyStep(
+        orderTrackingArray, executeProductTallyApiCalls_flag, deliveryDate, finalBatchNumbers, results, executionDetails
+      );
+      successCount += productTallyResults.successCount;
+      failureCount += productTallyResults.failureCount;
+
       // Step 4: Execute FOS_update script
       console.log(`\n[${requestId}] ━━━ STAGE 4: FOS UPDATE ━━━`);
       const fosResults = await this.executeFosUpdateStep(
@@ -234,27 +250,32 @@ class OrderProcessingPipeline {
       console.log(`✅ REQUEST COMPLETE - ID: ${requestId} - Duration: ${overallExecutionTime}ms`);
       console.log('='.repeat(80) + '\n');
 
-      return ResponseFormatter.formatResponse({
-        success: successCount > 0,
-        successCount,
-        failureCount,
-        overallExecutionTime,
-        requestParams: this.requestParams,
-        orderTrackingArray,
-        deliveryDate,
-        currentBatchNumbers,
-        finalBatchNumbers,
-        locationSummary,
-        executionDetails,
-        results,
-        folderPreCreationResults,
-        polaroidProcessingResults,
-        personalizedApiResults,
-        labelsApiResults,
-        googleSheetsResults,
-        SCRIPTS_CONFIG: this.SCRIPTS_CONFIG,
-        isZapierRequest: this.requestParams.source === 'zapier'
-      });
+      // Return different response format for manual processing mode
+      if (isManualMode) {
+        return this.formatManualResponse(orderTrackingArray, overallExecutionTime, successCount, failureCount);
+      } else {
+        return ResponseFormatter.formatResponse({
+          success: successCount > 0,
+          successCount,
+          failureCount,
+          overallExecutionTime,
+          requestParams: this.requestParams,
+          orderTrackingArray,
+          deliveryDate,
+          currentBatchNumbers,
+          finalBatchNumbers,
+          locationSummary,
+          executionDetails,
+          results,
+          folderPreCreationResults,
+          polaroidProcessingResults,
+          personalizedApiResults,
+          labelsApiResults,
+          googleSheetsResults,
+          SCRIPTS_CONFIG: this.SCRIPTS_CONFIG,
+          isZapierRequest: this.requestParams.source === 'zapier'
+        });
+      }
 
     } finally {
       if (connection) {
@@ -1038,6 +1059,118 @@ class OrderProcessingPipeline {
     };
   }
 
+  async executeProductTallyStep(orderTrackingArray, executeProductTallyApiCalls_flag, deliveryDate, finalBatchNumbers, results, executionDetails) {
+    const startTime = Date.now();
+    let successCount = 0;
+    let failureCount = 0;
+
+    try {
+      console.log(`\n📊 === PRODUCT TALLY EXECUTION DECISION ===`);
+      console.log(`📊 executeProductTallyApiCalls_flag: ${executeProductTallyApiCalls_flag} (dev_mode[3] = '${this.requestParams.dev_mode[3]}')`);
+
+      // Filter successful logistics orders (gopeople OR auspost)
+      const successfulLogisticsOrders = orderTrackingArray.filter(order =>
+        order.gopeople_status === true || order.auspost_status === true
+      );
+
+      console.log(`📋 Successful logistics orders available: ${successfulLogisticsOrders.length} (out of ${orderTrackingArray.length} total orders)`);
+
+      if (successfulLogisticsOrders.length === 0) {
+        console.log(`❌ Decision: SKIPPING Product Tally (no successful logistics orders)`);
+        console.log(`=== END PRODUCT TALLY DECISION ===\n`);
+        this.handleProductTallySkipped(results, executionDetails, 'No successful logistics orders available');
+        return { successCount: 0, failureCount: 1 };
+      }
+
+      if (executeProductTallyApiCalls_flag) {
+        console.log(`✅ Decision: EXECUTING Product Tally calculation AND API calls`);
+      } else {
+        console.log(`✅ Decision: EXECUTING Product Tally calculation ONLY (API calls disabled)`);
+      }
+      console.log(`=== END PRODUCT TALLY DECISION ===\n`);
+
+      console.log('Executing Product Tally service...');
+
+      const tallyResults = await this.productTallyService.calculateAndSubmitTallies(
+        successfulLogisticsOrders,
+        deliveryDate,
+        finalBatchNumbers,
+        executeProductTallyApiCalls_flag
+      );
+
+      // Store the results
+      results['product_tally'] = tallyResults;
+
+      executionDetails['product_tally'] = {
+        scriptKey: 'product_tally',
+        name: 'Product Tally Service',
+        success: tallyResults.success,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: tallyResults.executionTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        locationsProcessed: tallyResults.locationsProcessed.length,
+        apiCallsEnabled: executeProductTallyApiCalls_flag,
+        apiCallsSummary: tallyResults.apiCalls,
+        calculations: tallyResults.calculations,
+        errors: tallyResults.errors
+      };
+
+      if (tallyResults.success) {
+        console.log(`Product Tally service completed successfully. Processed ${tallyResults.locationsProcessed.length} location(s).`);
+        if (executeProductTallyApiCalls_flag) {
+          console.log(`API calls: ${tallyResults.apiCalls.success} successful, ${tallyResults.apiCalls.failed} failed.`);
+        }
+        successCount = 1;
+      } else {
+        console.log(`Product Tally service completed with errors: ${tallyResults.errors.map(e => e.error).join(', ')}`);
+        failureCount = 1;
+      }
+
+    } catch (error) {
+      console.error('Product Tally service error:', error.message);
+
+      results['product_tally'] = {
+        success: false,
+        error: error.message
+      };
+
+      executionDetails['product_tally'] = {
+        scriptKey: 'product_tally',
+        name: 'Product Tally Service',
+        success: false,
+        skipped: false,
+        devModeSkipped: false,
+        executionTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: this.requestParams,
+        error: error.message
+      };
+
+      failureCount = 1;
+    }
+
+    return { successCount, failureCount };
+  }
+
+  handleProductTallySkipped(results, executionDetails, reason) {
+    console.log(`Product Tally service: ${reason}`);
+
+    results['product_tally'] = null;
+    executionDetails['product_tally'] = {
+      scriptKey: 'product_tally',
+      name: 'Product Tally Service',
+      success: false,
+      skipped: true,
+      reason: reason,
+      devModeSkipped: false,
+      executionTime: 0,
+      timestamp: new Date().toISOString(),
+      appliedParams: this.requestParams
+    };
+  }
+
   async executeGpLabelsStep(executeGpLabelsApiCalls_flag, gopeopleResults, results, executionDetails, finalBatchNumbers) {
     const startTime = Date.now();
 
@@ -1160,76 +1293,77 @@ class OrderProcessingPipeline {
     const startTime = Date.now();
 
     try {
-      console.log(`\n🏷️  === AUSPOST LABELS API EXECUTION DECISION ===`);
+      console.log(`\n🏷️  === AUSPOST LABELS GENERATION & DOWNLOAD DECISION ===`);
       console.log(`📊 executeGpLabelsApiCalls_flag: ${executeGpLabelsApiCalls_flag} (dev_mode[2] = '${this.requestParams.dev_mode[2]}')`);
       console.log(`📋 Successful AusPost orders available: ${auspostResults?.successfulOrders?.length || 0}`);
 
       if (!executeGpLabelsApiCalls_flag) {
-        console.log(`❌ Decision: SKIPPING AusPost Labels API calls (dev_mode flag disabled)`);
-        console.log(`=== END AUSPOST LABELS API DECISION ===\n`);
+        console.log(`❌ Decision: SKIPPING AusPost Labels generation (dev_mode flag disabled)`);
+        console.log(`=== END AUSPOST LABELS DECISION ===\n`);
         this.handleAuspostLabelsApiSkipped(results, executionDetails, 'Skipped due to dev_mode flag');
         return null;
       }
 
       if (!auspostResults || !auspostResults.successfulOrders || auspostResults.successfulOrders.length === 0) {
-        console.log(`❌ Decision: SKIPPING AusPost Labels API calls (no successful AusPost orders)`);
-        console.log(`=== END AUSPOST LABELS API DECISION ===\n`);
+        console.log(`❌ Decision: SKIPPING AusPost Labels generation (no successful AusPost orders)`);
+        console.log(`=== END AUSPOST LABELS DECISION ===\n`);
         this.handleAuspostLabelsApiSkipped(results, executionDetails, 'No successful AusPost orders available for labels processing');
         return null;
       }
 
-      console.log(`✅ Decision: EXECUTING AusPost Labels API calls`);
-      console.log(`=== END AUSPOST LABELS API DECISION ===\n`);
+      console.log(`✅ Decision: EXECUTING AusPost Labels generation and download`);
+      console.log(`=== END AUSPOST LABELS DECISION ===\n`);
 
-      console.log('Processing AusPost Labels data with batch numbers...');
-      const auspostLabelsData = this.auspostService.processLabelsData(auspostResults.successfulOrders, finalBatchNumbers);
+      // Step 1: Generate label URLs using new AusPost Labels API
+      console.log('Step 1: Generating label URLs via AusPost Labels API...');
+      const labelsByLocation = await this.auspostService.processNewLabelsGeneration(
+        auspostResults.successfulOrders,
+        finalBatchNumbers
+      );
 
-      if (!auspostLabelsData || Object.keys(auspostLabelsData).length === 0) {
-        this.handleAuspostLabelsApiSkipped(results, executionDetails, 'No AusPost labels data generated');
+      if (!labelsByLocation || Object.keys(labelsByLocation).length === 0) {
+        this.handleAuspostLabelsApiSkipped(results, executionDetails, 'No label URLs generated from AusPost API');
         return null;
       }
 
-      console.log('Executing AusPost Labels API service...');
+      console.log(`✅ Generated label URLs for ${Object.keys(labelsByLocation).length} locations`);
 
-      // Validate configuration before making API calls
-      const configValidation = this.auspostLabelsApiService.validateConfiguration();
-      if (!configValidation.valid) {
-        throw new Error(`AusPost Labels API configuration validation failed: ${configValidation.issues.join(', ')}`);
-      }
-
-      const apiResults = await this.auspostLabelsApiService.processAuspostLabelsData(auspostLabelsData);
+      // Step 2: Download PDFs and upload to Google Drive
+      console.log('\nStep 2: Downloading PDFs and uploading to Google Drive...');
+      const downloadResults = await this.auspostLabelsDownloadService.processLabels(labelsByLocation);
 
       // Store the results
-      results['auspost_labels_api_service'] = apiResults;
+      results['auspost_labels_api_service'] = downloadResults;
 
       executionDetails['auspost_labels_api_service'] = {
         scriptKey: 'auspost_labels_api_service',
-        name: 'AusPost Labels API Service',
-        success: apiResults.success,
+        name: 'AusPost Labels Generation & Download Service',
+        success: downloadResults.success,
         skipped: false,
         devModeSkipped: false,
         executionTime: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         appliedParams: this.requestParams,
-        processingSummary: apiResults.summary,
-        processedLocations: apiResults.processedLocations.length,
-        errors: apiResults.errors
+        processingSummary: downloadResults.summary,
+        processedLocations: downloadResults.processedLocations.length,
+        errors: downloadResults.errors,
+        labelsByLocation: Object.keys(labelsByLocation)
       };
 
-      if (apiResults.success) {
-        console.log(`AusPost Labels API service completed successfully. Processed ${apiResults.summary.totalLocations} locations with ${apiResults.summary.successfulCalls} successful calls.`);
+      if (downloadResults.success) {
+        console.log(`AusPost Labels service completed successfully. Processed ${downloadResults.summary.totalLocations} locations with ${downloadResults.summary.successfulUploads} successful uploads.`);
       } else {
-        console.log(`AusPost Labels API service completed with errors: ${apiResults.errors.join(', ')}`);
+        console.log(`AusPost Labels service completed with errors: ${downloadResults.errors.join(', ')}`);
       }
 
       return {
-        success: apiResults.success,
-        auspostLabelsData: auspostLabelsData,
-        apiResults: apiResults
+        success: downloadResults.success,
+        labelsByLocation: labelsByLocation,
+        downloadResults: downloadResults
       };
 
     } catch (error) {
-      console.error('AusPost Labels API service error:', error.message);
+      console.error('AusPost Labels service error:', error.message);
 
       results['auspost_labels_api_service'] = {
         success: false,
@@ -1238,7 +1372,7 @@ class OrderProcessingPipeline {
 
       executionDetails['auspost_labels_api_service'] = {
         scriptKey: 'auspost_labels_api_service',
-        name: 'AusPost Labels API Service',
+        name: 'AusPost Labels Generation & Download Service',
         success: false,
         skipped: false,
         devModeSkipped: false,
@@ -1489,6 +1623,42 @@ class OrderProcessingPipeline {
       executionTime: 0,
       timestamp: new Date().toISOString(),
       appliedParams: this.requestParams
+    };
+  }
+
+  formatManualResponse(orderTrackingArray, executionTime, successCount, failureCount) {
+    console.log('\n📊 === FORMATTING MANUAL PROCESSING RESPONSE ===');
+
+    const formattedOrders = orderTrackingArray.map(order => {
+      const isSuccess = order.gopeople_status === true || order.auspost_status === true;
+      const error = order.gopeople_error || order.auspost_error || null;
+
+      return {
+        order_number: order.order_number,
+        success: isSuccess,
+        error: isSuccess ? null : error
+      };
+    });
+
+    const successfulCount = formattedOrders.filter(o => o.success).length;
+    const unsuccessfulCount = formattedOrders.filter(o => !o.success).length;
+
+    console.log(`Total orders: ${formattedOrders.length}`);
+    console.log(`Successful: ${successfulCount}`);
+    console.log(`Unsuccessful: ${unsuccessfulCount}`);
+    console.log('=== END MANUAL RESPONSE FORMATTING ===\n');
+
+    return {
+      success: successfulCount > 0,
+      testEndpoint: true,
+      message: 'Manual order processing completed',
+      summary: {
+        total: formattedOrders.length,
+        successful: successfulCount,
+        unsuccessful: unsuccessfulCount
+      },
+      orders: formattedOrders,
+      executionTime: executionTime
     };
   }
 }

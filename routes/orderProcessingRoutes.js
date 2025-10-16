@@ -64,7 +64,7 @@ class OrderProcessingRoutes {
     });
 
     // FOS process orders endpoint
-    app.post('/fos-process-orders', async (req, res) => {
+    app.post('/fos-process-orders-test', async (req, res) => {
       try {
         const { date, dev_mode, is_same_day, time_frame } = req.query;
         const orders = req.body;
@@ -129,6 +129,123 @@ class OrderProcessingRoutes {
         console.error('FOS process orders endpoint error:', error.message);
         res.status(500).json({
           success: false,
+          error: error.message
+        });
+      }
+    });
+
+    // FOS process orders TEST endpoint - for backend development
+    // This is a test version of /fos-process-orders for development work
+    // Once ready, the logic here can be transferred to the production endpoint
+    app.post('/fos-process-orders', async (req, res) => {
+      try {
+        const { date, dev_mode, is_same_day, time_frame } = req.query;
+        const { orderIds } = req.body;
+
+        // Validate required parameters
+        if (!date || !dev_mode || is_same_day === undefined) {
+          return res.status(400).json({
+            success: false,
+            error: 'Missing required parameters: date, dev_mode, and is_same_day are all required',
+            testEndpoint: true
+          });
+        }
+
+        // Validate dev_mode is 6-digit binary
+        const devModePattern = /^[01]{6}$/;
+        if (!devModePattern.test(dev_mode)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid dev_mode parameter: must be exactly 6 binary digits (e.g., "000000" or "101010")',
+            testEndpoint: true
+          });
+        }
+
+        // Validate is_same_day is 0 or 1
+        const isSameDayNum = parseInt(is_same_day);
+        if (isSameDayNum !== 0 && isSameDayNum !== 1) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid is_same_day parameter: must be 0 or 1',
+            testEndpoint: true
+          });
+        }
+
+        // Validate date format (basic YYYY-MM-DD check)
+        const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+        if (!datePattern.test(date)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid date format: must be YYYY-MM-DD',
+            testEndpoint: true
+          });
+        }
+
+        // Validate orderIds exists and is a string
+        if (!orderIds || typeof orderIds !== 'string') {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid request body: must contain orderIds field with a string value',
+            testEndpoint: true
+          });
+        }
+
+        // Validate orderIds format (comma-separated numbers)
+        const orderIdsPattern = /^\d+(,\d+)*$/;
+        if (!orderIdsPattern.test(orderIds)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid orderIds format: must be comma-separated numbers (e.g., "123,234,345")',
+            testEndpoint: true
+          });
+        }
+
+        // Parse order IDs to array of integers
+        const orderIdsArray = orderIds.split(',').map(id => parseInt(id.trim()));
+
+        console.log(`\n[TEST] 🔧 === MANUAL ORDER PROCESSING REQUEST ===`);
+        console.log(`[TEST] Date: ${date}`);
+        console.log(`[TEST] Dev Mode: ${dev_mode}`);
+        console.log(`[TEST] Is Same Day: ${is_same_day} (${isSameDayNum === 1 ? 'GoPeople' : 'AusPost'})`);
+        console.log(`[TEST] Time Frame: ${time_frame || 'Not provided (will calculate automatically)'}`);
+        console.log(`[TEST] Order IDs: ${orderIdsArray.join(', ')} (${orderIdsArray.length} orders)`);
+        console.log(`[TEST] === END REQUEST INFO ===\n`);
+
+        // Create manual request parameters for the pipeline
+        const manualRequestParams = {
+          date: date,
+          dev_mode: dev_mode,
+          is_same_day: String(isSameDayNum),
+          orderIds: orderIdsArray,
+          isManualProcessing: true,
+          manualTimeframe: time_frame || null,
+          // Add default parameters for pipeline compatibility
+          locations: [],
+          hasLocationFilter: false,
+          store: '3',  // Both stores
+          shop_ids: [10, 6],
+          shop_id_filter: '10, 6'
+        };
+
+        // Execute the order processing pipeline
+        const pipeline = new OrderProcessingPipeline(
+          manualRequestParams,
+          dbConfig,
+          gopeopleConfig,
+          auspostConfig,
+          scriptsConfig
+        );
+
+        const response = await pipeline.execute();
+
+        // Return the formatted response
+        res.status(200).json(response);
+
+      } catch (error) {
+        console.error('[TEST] FOS process orders endpoint error:', error.message);
+        res.status(500).json({
+          success: false,
+          testEndpoint: true,
           error: error.message
         });
       }

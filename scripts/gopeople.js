@@ -48,13 +48,15 @@ LIMIT 100;
 
 // Helper function to calculate the pickup time based on current time and available slots
 function calculatePickupTime(location, deliveryDate) {
+  console.log(`\n⏰ [calculatePickupTime] Processing for ${location}, delivery date: ${deliveryDate}`);
+
   // Get location timezone info
   const locationTz = LOCATION_TIMEZONES[location];
   if (!locationTz) {
     console.error(`No timezone info for location: ${location}`);
     return null;
   }
-  
+
   // Get current time in the location's timezone
   const locationTime = TimezoneHelper.getLocationTime(location);
   if (!locationTime) return null;
@@ -63,6 +65,8 @@ function calculatePickupTime(location, deliveryDate) {
   const deliveryDateObj = new Date(deliveryDate);
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const dayOfWeek = dayNames[deliveryDateObj.getDay()];
+
+  console.log(`📅 Delivery day of week: ${dayOfWeek}`);
 
   // Get pickup slots for this location and day
   const locationRules = PICKUP_TIME_RULES[location];
@@ -77,33 +81,47 @@ function calculatePickupTime(location, deliveryDate) {
     return null;
   }
 
+  console.log(`🎯 Available slots for ${location} on ${dayOfWeek}:`, slots.map(s => `Pickup: ${s.pickupTime}, Cutoff: ${s.cutoffTime}`).join(' | '));
+
   // Get current time in HH:MM format
   const currentTimeStr = TimezoneHelper.formatTimeString(locationTime);
-  
+
   // Check if delivery date is today
   const isToday = deliveryDateObj.toDateString() === locationTime.toDateString();
-  
+
+  console.log(`📆 Is delivery for today? ${isToday ? 'YES' : 'NO (future date)'}`);
+  console.log(`⏱️  Current local time: ${currentTimeStr}`);
+
   // If delivery is for today, find the next available slot
   if (isToday) {
+    console.log(`🔍 Checking cutoff times for same-day delivery...`);
     for (const slot of slots) {
+      console.log(`   Comparing: ${currentTimeStr} < ${slot.cutoffTime}? ${currentTimeStr < slot.cutoffTime ? '✅ YES' : '❌ NO'}`);
       if (currentTimeStr < slot.cutoffTime) {
+        console.log(`✅ [RESULT] Selected pickup time: ${slot.pickupTime} (before cutoff ${slot.cutoffTime})`);
         return slot.pickupTime;
       }
     }
-    
+
     // If current time is after all cutoff times, no pickup available for today
-    console.log(`Current time ${currentTimeStr} is after all cutoff times for ${location}`);
+    console.log(`❌ [RESULT] Current time ${currentTimeStr} is after all cutoff times for ${location}`);
+    console.log(`   Order will be SKIPPED\n`);
     return null; // This will cause the order to be skipped
   } else {
     // For future dates, use the first available slot
+    console.log(`✅ [RESULT] Future delivery - using first slot: ${slots[0].pickupTime}\n`);
     return slots[0].pickupTime;
   }
 }
 
 // Transform function to convert query results to GoPeople API format
-function transform(rawData, deliveryDate) {
+// manualTimeframe: optional parameter for manual processing (format: "2025-10-14 14:30:00+11:00")
+function transform(rawData, deliveryDate, manualTimeframe = null) {
   console.log(`\n🔄 === GOPEOPLE TRANSFORM STARTING ===`);
   console.log(`📥 Total orders from database: ${rawData ? rawData.length : 0}`);
+  if (manualTimeframe) {
+    console.log(`🔧 Manual timeframe provided: ${manualTimeframe} (will bypass pickup time calculation)`);
+  }
 
   if (!rawData || !Array.isArray(rawData)) {
     console.log(`⚠️ No data to transform`);
@@ -117,21 +135,42 @@ function transform(rawData, deliveryDate) {
   for (const row of rawData) {
     // Get the addressFrom based on location
     const addressFrom = LOCATION_ADDRESSES[row.location_name] || LOCATION_ADDRESSES['Melbourne'];
-    
-    // Calculate the pickup time for this order
-    const pickupTime = calculatePickupTime(row.location_name, deliveryDate || row.delivery_date);
-    
-    // If no pickup time available (past cutoff), skip this order
-    if (!pickupTime) {
-      console.log(`Skipping order ${row.order_number} - past cutoff time for location ${row.location_name}`);
-      skippedOrders.push({
-        orderNumber: row.order_number,
-        location: row.location_name,
-        reason: 'Past cutoff time for all available pickup slots'
-      });
-      continue; // Skip this order
+
+    // Calculate or use manual pickup date/time
+    console.log(`\n📦 Processing Order: ${row.order_number} (Location: ${row.location_name})`);
+
+    let pickUpDate;
+
+    if (manualTimeframe) {
+      // Manual mode: use provided timeframe directly (already includes timezone)
+      pickUpDate = manualTimeframe;
+      console.log(`✅ [MANUAL TIMEFRAME] Order ${row.order_number} - using provided timeframe: ${pickUpDate}`);
+    } else {
+      // Automatic mode: calculate pickup time based on cutoff rules
+      const pickupTime = calculatePickupTime(row.location_name, deliveryDate || row.delivery_date);
+
+      // If no pickup time available (past cutoff), skip this order
+      if (!pickupTime) {
+        console.log(`⏭️  [ORDER SKIPPED] Order ${row.order_number} - past cutoff time for location ${row.location_name}\n`);
+        skippedOrders.push({
+          orderNumber: row.order_number,
+          location: row.location_name,
+          reason: 'Past cutoff time for all available pickup slots'
+        });
+        continue; // Skip this order
+      }
+
+      console.log(`✅ [ORDER ACCEPTED] Order ${row.order_number} - pickup time assigned: ${pickupTime}`);
+
+      // Format pickup date with correct timezone
+      const pickupDateBase = deliveryDate || row.delivery_date;
+      const timezoneOffset = TimezoneHelper.getTimezoneOffset(row.location_name, pickupDateBase);
+      pickUpDate = `${pickupDateBase} ${pickupTime}:00${timezoneOffset}`;
     }
-    
+
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+
     // Determine unit field
     let unit = '';
     if (row.building_name && row.building_name !== '') {
@@ -139,14 +178,9 @@ function transform(rawData, deliveryDate) {
     } else {
       unit = row.room_number || '';
     }
-    
+
     // Determine isCommercial based on residence_type
     const isCommercial = row.residence_type !== 'House/Unit/Apartment';
-    
-    // Format pickup date with correct timezone
-    const pickupDateBase = deliveryDate || row.delivery_date;
-    const timezoneOffset = TimezoneHelper.getTimezoneOffset(row.location_name, pickupDateBase);
-    const pickUpDate = `${pickupDateBase} ${pickupTime}:00${timezoneOffset}`;
     
     transformedOrders.push({
       orderNumber: row.order_number, // Keep this for tracking

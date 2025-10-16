@@ -45,7 +45,8 @@ class ScriptExecutorService {
       if (scriptConfig.scriptModule.transform && typeof scriptConfig.scriptModule.transform === 'function') {
         // Pass delivery date to transform for gopeople and auspost scripts
         if (scriptKey === 'gopeople') {
-          transformedData = scriptConfig.scriptModule.transform(rawResults, requestParams.date);
+          const manualTimeframe = requestParams.manualTimeframe || null;
+          transformedData = scriptConfig.scriptModule.transform(rawResults, requestParams.date, manualTimeframe);
           skippedCount = rawResults.length - transformedData.length;
           if (skippedCount > 0) {
             console.log(`GoPeople: ${skippedCount} orders skipped due to cutoff times`);

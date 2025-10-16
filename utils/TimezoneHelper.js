@@ -29,9 +29,17 @@ class TimezoneHelper {
       console.error(`No timezone info for location: ${location}`);
       return null;
     }
-    
+
     const now = new Date();
-    return new Date(now.toLocaleString("en-US", { timeZone: locationTz.timezone }));
+    const locationTime = new Date(now.toLocaleString("en-US", { timeZone: locationTz.timezone }));
+
+    console.log(`🕐 [TimezoneHelper] Timezone conversion for ${location}:`);
+    console.log(`   Server time (UTC): ${now.toISOString()}`);
+    console.log(`   Location timezone: ${locationTz.timezone}`);
+    console.log(`   Converted to local: ${locationTime.toString()}`);
+    console.log(`   Local time formatted: ${this.formatTimeString(locationTime)}`);
+
+    return locationTime;
   }
 
   static formatTimeString(date) {

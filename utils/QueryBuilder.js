@@ -117,7 +117,25 @@ class QueryBuilder {
       console.log('Final queryParams array:', queryParams);
       console.log('=== END ORDERS QUERY BUILDER DEBUG ===\n');
     }
-    
+
+    // Handle manual orderIds filter for orders script (manual processing mode)
+    if (scriptKey === 'orders' && params.orderIds && params.orderIds.length > 0) {
+      console.log(`Orders: Adding manual orderIds filter for ${params.orderIds.length} orders`);
+      // Find the subquery WHERE clause and add orderIds filter before the location_name filter
+      const subqueryPattern = /(WHERE[\s\S]*?)(AND sfl\.location_name)/i;
+      if (subqueryPattern.test(query)) {
+        const orderIdPlaceholders = params.orderIds.map(() => '?').join(',');
+        query = query.replace(
+          subqueryPattern,
+          `$1 AND so.id IN (${orderIdPlaceholders}) $2`
+        );
+        queryParams.push(...params.orderIds);
+        console.log(`Orders: Inserted orderIds filter with ${params.orderIds.length} IDs into subquery`);
+      } else {
+        console.warn('Orders: Could not find WHERE clause pattern to insert orderIds filter');
+      }
+    }
+
     // Handle location parameter - supports multiple locations (comma-separated)
     if (params.hasLocationFilter && params.locations && params.locations.length > 0) {
       if (scriptKey === 'orders') {

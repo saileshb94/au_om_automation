@@ -1,48 +1,57 @@
 class ValidationHelper {
   static parseDevMode(devModeParam) {
-    // Default to "11111" if not provided or invalid (5-digit format)
-    const defaultMode = "11111";
+    // Default to "111111" if not provided or invalid (6-digit format)
+    const defaultMode = "111111";
 
     if (!devModeParam || typeof devModeParam !== 'string') {
       console.log(`Invalid dev_mode parameter: ${devModeParam}, using default: ${defaultMode}`);
       return defaultMode;
     }
 
-    // Support 2-digit (legacy), 3-digit, 4-digit, and 5-digit formats
+    // Support 2-digit (legacy), 3-digit, 4-digit, 5-digit, and 6-digit formats
     if (devModeParam.length === 2) {
-      // Legacy 2-digit format: convert to 5-digit by adding '11' for personalized/GP labels APIs and '0' for Google Sheets
+      // Legacy 2-digit format: convert to 6-digit by adding '11' for personalized/GP labels APIs, '0' for product_tally, and '0' for Google Sheets
       if (!/^[01][01]$/.test(devModeParam)) {
         console.log(`Invalid 2-digit dev_mode format: ${devModeParam}, using default: ${defaultMode}`);
         return defaultMode;
       }
-      const convertedMode = devModeParam[0] + '11' + devModeParam[1] + '0'; // Insert '11' for personalized/GP labels, '0' for Sheets
-      console.log(`Legacy 2-digit dev_mode converted: ${devModeParam} → ${convertedMode} (gopeople: ${convertedMode[0]}, personalized: ${convertedMode[1]}, gp_labels: ${convertedMode[2]}, fos_update: ${convertedMode[3]}, google_sheets: ${convertedMode[4]})`);
+      const convertedMode = devModeParam[0] + '110' + devModeParam[1] + '0'; // Insert '11' for personalized/GP labels, '0' for product_tally, '0' for Sheets
+      console.log(`Legacy 2-digit dev_mode converted: ${devModeParam} → ${convertedMode} (gopeople: ${convertedMode[0]}, personalized: ${convertedMode[1]}, gp_labels: ${convertedMode[2]}, product_tally: ${convertedMode[3]}, fos_update: ${convertedMode[4]}, google_sheets: ${convertedMode[5]})`);
       return convertedMode;
     } else if (devModeParam.length === 3) {
-      // 3-digit format: convert to 5-digit by adding '1' for GP labels API and '0' for Google Sheets
+      // 3-digit format: convert to 6-digit by adding '1' for GP labels API, '0' for product_tally, and '0' for Google Sheets
       if (!/^[01][01][01]$/.test(devModeParam)) {
         console.log(`Invalid 3-digit dev_mode format: ${devModeParam}, using default: ${defaultMode}`);
         return defaultMode;
       }
-      const convertedMode = devModeParam[0] + devModeParam[1] + '1' + devModeParam[2] + '0'; // Insert '1' for GP labels, '0' for Sheets
-      console.log(`3-digit dev_mode converted: ${devModeParam} → ${convertedMode} (gopeople: ${convertedMode[0]}, personalized: ${convertedMode[1]}, gp_labels: ${convertedMode[2]}, fos_update: ${convertedMode[3]}, google_sheets: ${convertedMode[4]})`);
+      const convertedMode = devModeParam[0] + devModeParam[1] + '10' + devModeParam[2] + '0'; // Insert '1' for GP labels, '0' for product_tally, '0' for Sheets
+      console.log(`3-digit dev_mode converted: ${devModeParam} → ${convertedMode} (gopeople: ${convertedMode[0]}, personalized: ${convertedMode[1]}, gp_labels: ${convertedMode[2]}, product_tally: ${convertedMode[3]}, fos_update: ${convertedMode[4]}, google_sheets: ${convertedMode[5]})`);
       return convertedMode;
     } else if (devModeParam.length === 4) {
-      // 4-digit format: convert to 5-digit by adding '0' for Google Sheets (disabled by default for backward compatibility)
+      // 4-digit format: convert to 6-digit by adding '0' for product_tally and '0' for Google Sheets
       if (!/^[01][01][01][01]$/.test(devModeParam)) {
         console.log(`Invalid 4-digit dev_mode format: ${devModeParam}, using default: ${defaultMode}`);
         return defaultMode;
       }
-      const convertedMode = devModeParam + '0'; // Append '0' for Google Sheets
-      console.log(`4-digit dev_mode converted: ${devModeParam} → ${convertedMode} (gopeople: ${convertedMode[0]}, personalized: ${convertedMode[1]}, gp_labels: ${convertedMode[2]}, fos_update: ${convertedMode[3]}, google_sheets: ${convertedMode[4]})`);
+      const convertedMode = devModeParam + '00'; // Append '0' for product_tally and '0' for Google Sheets
+      console.log(`4-digit dev_mode converted: ${devModeParam} → ${convertedMode} (gopeople: ${convertedMode[0]}, personalized: ${convertedMode[1]}, gp_labels: ${convertedMode[2]}, product_tally: ${convertedMode[3]}, fos_update: ${convertedMode[4]}, google_sheets: ${convertedMode[5]})`);
       return convertedMode;
     } else if (devModeParam.length === 5) {
-      // New 5-digit format
+      // 5-digit format: convert to 6-digit by inserting '0' for product_tally at position 3
       if (!/^[01][01][01][01][01]$/.test(devModeParam)) {
         console.log(`Invalid 5-digit dev_mode format: ${devModeParam}, using default: ${defaultMode}`);
         return defaultMode;
       }
-      console.log(`Dev mode parsed: ${devModeParam} (gopeople: ${devModeParam[0]}, personalized: ${devModeParam[1]}, gp_labels: ${devModeParam[2]}, fos_update: ${devModeParam[3]}, google_sheets: ${devModeParam[4]})`);
+      const convertedMode = devModeParam.slice(0, 3) + '0' + devModeParam.slice(3); // Insert '0' for product_tally at position 3
+      console.log(`5-digit dev_mode converted: ${devModeParam} → ${convertedMode} (gopeople: ${convertedMode[0]}, personalized: ${convertedMode[1]}, gp_labels: ${convertedMode[2]}, product_tally: ${convertedMode[3]}, fos_update: ${convertedMode[4]}, google_sheets: ${convertedMode[5]})`);
+      return convertedMode;
+    } else if (devModeParam.length === 6) {
+      // New 6-digit format
+      if (!/^[01][01][01][01][01][01]$/.test(devModeParam)) {
+        console.log(`Invalid 6-digit dev_mode format: ${devModeParam}, using default: ${defaultMode}`);
+        return defaultMode;
+      }
+      console.log(`Dev mode parsed: ${devModeParam} (gopeople: ${devModeParam[0]}, personalized: ${devModeParam[1]}, gp_labels: ${devModeParam[2]}, product_tally: ${devModeParam[3]}, fos_update: ${devModeParam[4]}, google_sheets: ${devModeParam[5]})`);
       return devModeParam;
     } else {
       console.log(`Invalid dev_mode length: ${devModeParam}, using default: ${defaultMode}`);

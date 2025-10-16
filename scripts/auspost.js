@@ -209,7 +209,7 @@ function transform(rawData, deliveryDate) {
       shipment_reference: row.order_number,
       customer_reference_1: row.order_number,
       customer_reference_2: '', // SKU list - not available in current data, leaving empty
-      generate_label_metadata: true,
+      generate_label_metadata: false,
       from: {
         name: addressFrom.name,
         lines: addressFrom.lines,

@@ -903,6 +903,96 @@ class GoogleDriveService {
             };
         }
     }
+
+    /**
+     * Upload PDF buffer to Google Drive folder structure
+     * Creates folder structure: location/delivery_date/Batch_X
+     * @param {Buffer} pdfBuffer - PDF file content as buffer
+     * @param {string} filename - Name for the PDF file
+     * @param {string} location - Location name (e.g., 'Melbourne')
+     * @param {string} deliveryDate - Delivery date (YYYY-MM-DD)
+     * @param {number} batch - Batch number
+     * @returns {Promise<Object>} Upload result with file details
+     */
+    async uploadPdfToFolder(pdfBuffer, filename, location, deliveryDate, batch) {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        console.log(`\n☁️  === UPLOADING PDF TO GOOGLE DRIVE ===`);
+        console.log(`  Location: ${location}`);
+        console.log(`  Delivery Date: ${deliveryDate}`);
+        console.log(`  Batch: ${batch}`);
+        console.log(`  Filename: ${filename}`);
+        console.log(`  Size: ${(pdfBuffer.length / 1024).toFixed(2)} KB`);
+
+        try {
+            // Create folder structure: main -> location -> delivery_date -> batch_number
+            console.log(`📁 Creating/finding folder structure...`);
+
+            const locationFolderId = await this.findOrCreateFolder(
+                GOOGLE_DRIVE_CONFIG.mainFolderId,
+                location
+            );
+
+            const dateFolderId = await this.findOrCreateFolder(
+                locationFolderId,
+                deliveryDate
+            );
+
+            const batchFolderId = await this.findOrCreateFolder(
+                dateFolderId,
+                `Batch_${batch}`
+            );
+
+            const folderPath = `${location}/${deliveryDate}/Batch_${batch}`;
+            console.log(`✅ Folder structure ready: ${folderPath}`);
+
+            // Upload the PDF file
+            console.log(`📤 Uploading PDF file...`);
+
+            const fileMetadata = {
+                name: filename,
+                mimeType: 'application/pdf',
+                parents: [batchFolderId]
+            };
+
+            const media = {
+                mimeType: 'application/pdf',
+                body: require('stream').Readable.from(pdfBuffer)
+            };
+
+            const uploadResponse = await this.drive.files.create({
+                requestBody: fileMetadata,
+                media: media,
+                fields: 'id, name, mimeType, size, webViewLink',
+                supportsAllDrives: true
+            });
+
+            console.log(`✅ PDF uploaded successfully`);
+            console.log(`  File ID: ${uploadResponse.data.id}`);
+            console.log(`  File Name: ${uploadResponse.data.name}`);
+            console.log(`  File Size: ${uploadResponse.data.size} bytes`);
+            console.log(`  Web View Link: ${uploadResponse.data.webViewLink || 'N/A'}`);
+            console.log(`=== END PDF UPLOAD ===\n`);
+
+            return {
+                success: true,
+                fileId: uploadResponse.data.id,
+                fileName: uploadResponse.data.name,
+                fileSize: uploadResponse.data.size,
+                webViewLink: uploadResponse.data.webViewLink,
+                folderPath: folderPath,
+                location: location,
+                deliveryDate: deliveryDate,
+                batch: batch
+            };
+
+        } catch (error) {
+            console.error(`❌ Error uploading PDF to Google Drive:`, error.message);
+            throw error;
+        }
+    }
 }
 
 module.exports = GoogleDriveService;

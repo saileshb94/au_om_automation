@@ -1,3 +1,12 @@
+// ============================================================================
+// OLD AUSPOST LABELS API SERVICE (COMMENTED OUT - DO NOT DELETE)
+// This service used DocuPilot API for label generation
+// Kept for reference and potential rollback
+// NEW IMPLEMENTATION uses AusPost Labels API directly and downloads PDFs
+// See: AuspostApiService.processNewLabelsGeneration() and AuspostLabelsDownloadService
+// ============================================================================
+
+/*
 const axios = require('axios');
 const { AUSPOST_LABELS_API_CONFIG } = require('../config');
 
@@ -207,6 +216,34 @@ class AuspostLabelsApiService {
       valid: issues.length === 0,
       issues: issues
     };
+  }
+}
+
+module.exports = AuspostLabelsApiService;
+*/
+
+// ============================================================================
+// NEW STUB - Keep module exportable but inactive
+// ============================================================================
+
+class AuspostLabelsApiService {
+  constructor() {
+    console.log('⚠️  AuspostLabelsApiService is deprecated - using new label flow');
+  }
+
+  async processAuspostLabelsData() {
+    console.log('⚠️  This method is deprecated - labels now processed via AuspostApiService.processNewLabelsGeneration()');
+    return {
+      success: false,
+      message: 'Service deprecated - use new label flow',
+      processedLocations: [],
+      errors: [],
+      summary: { totalLocations: 0, successfulCalls: 0, failedCalls: 0 }
+    };
+  }
+
+  validateConfiguration() {
+    return { valid: true, issues: [] };
   }
 }
 

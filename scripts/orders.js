@@ -41,7 +41,7 @@ FROM (
     WHERE
         so.shop_id IN (PLACEHOLDER_SHOP_IDS)
         AND sode.delivery_date = 'PLACEHOLDER_DELIVERY_DATE'
-        AND so.process_status IS NULL
+        AND (so.process_status != 'Processed' OR so.process_status IS NULL)
         AND sode.is_same_day = PLACEHOLDER_IS_SAME_DAY
         AND sfl.location_name IN ('Melbourne', 'Sydney', 'Perth', 'Adelaide', 'Brisbane')
 ) ranked_orders

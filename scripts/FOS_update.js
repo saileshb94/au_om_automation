@@ -2,7 +2,7 @@
 
 const query = `
 UPDATE flowerchimp.shopify_orders
-SET process_status = true
+SET process_status = 'Processed'
 WHERE id IN (PLACEHOLDER_ORDER_NUMBERS);
 `;
 
