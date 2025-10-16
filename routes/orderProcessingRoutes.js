@@ -181,8 +181,14 @@ class OrderProcessingRoutes {
           });
         }
 
+        // Handle array format: [{"orderIds":"2228252"}]
+        let orderIdsString = orderIds;
+        if (Array.isArray(req.body) && req.body.length > 0 && req.body[0].orderIds) {
+          orderIdsString = req.body[0].orderIds;
+        }
+
         // Validate orderIds exists and is a string
-        if (!orderIds || typeof orderIds !== 'string') {
+        if (!orderIdsString || typeof orderIdsString !== 'string') {
           return res.status(400).json({
             success: false,
             error: 'Invalid request body: must contain orderIds field with a string value',
@@ -192,7 +198,7 @@ class OrderProcessingRoutes {
 
         // Validate orderIds format (comma-separated numbers)
         const orderIdsPattern = /^\d+(,\d+)*$/;
-        if (!orderIdsPattern.test(orderIds)) {
+        if (!orderIdsPattern.test(orderIdsString)) {
           return res.status(400).json({
             success: false,
             error: 'Invalid orderIds format: must be comma-separated numbers (e.g., "123,234,345")',
@@ -201,7 +207,7 @@ class OrderProcessingRoutes {
         }
 
         // Parse order IDs to array of integers
-        const orderIdsArray = orderIds.split(',').map(id => parseInt(id.trim()));
+        const orderIdsArray = orderIdsString.split(',').map(id => parseInt(id.trim()));
 
         console.log(`\n[TEST] 🔧 === MANUAL ORDER PROCESSING REQUEST ===`);
         console.log(`[TEST] Date: ${date}`);
