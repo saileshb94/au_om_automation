@@ -1268,6 +1268,11 @@ class OrderProcessingPipeline {
 
       console.log('Executing GP Labels API service...');
 
+      // Wait for Google Drive folder propagation before calling DocuPilot
+      console.log(`⏳ Waiting 10 seconds for Google Drive folder propagation before DocuPilot API calls...`);
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      console.log(`✅ Propagation delay complete, proceeding with DocuPilot API calls\n`);
+
       // Validate configuration before making API calls
       const configValidation = this.gpLabelsApiService.validateConfiguration();
       if (!configValidation.valid) {
@@ -1375,6 +1380,11 @@ class OrderProcessingPipeline {
 
       console.log(`✅ Decision: EXECUTING AusPost Labels generation and download`);
       console.log(`=== END AUSPOST LABELS DECISION ===\n`);
+
+      // Wait for Google Drive folder propagation before calling AusPost/DocuPilot
+      console.log(`⏳ Waiting 10 seconds for Google Drive folder propagation before AusPost Labels API calls...`);
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      console.log(`✅ Propagation delay complete, proceeding with AusPost Labels API calls\n`);
 
       // Step 1: Generate label URLs using new AusPost Labels API
       console.log('Step 1: Generating label URLs via AusPost Labels API...');
