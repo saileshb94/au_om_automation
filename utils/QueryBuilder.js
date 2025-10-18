@@ -7,18 +7,32 @@ class QueryBuilder {
     
     console.log('Building dynamic query for:', scriptKey);
 
-    // Handle FOS_update script specially - use orderIds instead of orderNumbers
+    // Handle FOS_update script specially - supports both successful and unsuccessful order updates
     if (scriptKey === 'fos_update') {
-      if (params.orderIds && params.orderIds.length > 0) {
-        const orderIdPlaceholders = params.orderIds.map(() => '?').join(',');
-        query = query.replace('PLACEHOLDER_ORDER_NUMBERS', orderIdPlaceholders);
-        queryParams.push(...params.orderIds);
-        console.log(`FOS_update: Built query for ${params.orderIds.length} order IDs`);
-      } else {
-        // If no order IDs, create a query that won't affect any rows
-        query = query.replace('PLACEHOLDER_ORDER_NUMBERS', '0');
-        console.log('FOS_update: No order IDs provided, using placeholder');
+      // Check if this is for successful orders
+      if (params.successfulOrderIds && params.successfulOrderIds.length > 0) {
+        const orderIdPlaceholders = params.successfulOrderIds.map(() => '?').join(',');
+        query = query.replace('PLACEHOLDER_SUCCESSFUL_ORDER_IDS', orderIdPlaceholders);
+        queryParams.push(...params.successfulOrderIds);
+        console.log(`FOS_update (Successful): Built query for ${params.successfulOrderIds.length} order IDs`);
+      } else if (query.includes('PLACEHOLDER_SUCCESSFUL_ORDER_IDS')) {
+        // If no successful order IDs, create a query that won't affect any rows
+        query = query.replace('PLACEHOLDER_SUCCESSFUL_ORDER_IDS', '0');
+        console.log('FOS_update (Successful): No order IDs provided, using placeholder');
       }
+
+      // Check if this is for unsuccessful orders
+      if (params.unsuccessfulOrderIds && params.unsuccessfulOrderIds.length > 0) {
+        const orderIdPlaceholders = params.unsuccessfulOrderIds.map(() => '?').join(',');
+        query = query.replace('PLACEHOLDER_UNSUCCESSFUL_ORDER_IDS', orderIdPlaceholders);
+        queryParams.push(...params.unsuccessfulOrderIds);
+        console.log(`FOS_update (Unsuccessful): Built query for ${params.unsuccessfulOrderIds.length} order IDs`);
+      } else if (query.includes('PLACEHOLDER_UNSUCCESSFUL_ORDER_IDS')) {
+        // If no unsuccessful order IDs, create a query that won't affect any rows
+        query = query.replace('PLACEHOLDER_UNSUCCESSFUL_ORDER_IDS', '0');
+        console.log('FOS_update (Unsuccessful): No order IDs provided, using placeholder');
+      }
+
       return { query, params: queryParams };
     }
     

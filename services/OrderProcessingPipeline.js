@@ -10,6 +10,7 @@ const AuspostLabelsDownloadService = require('./AuspostLabelsDownloadService');
 const ProductTallyService = require('./ProductTallyService');
 const GoogleDriveService = require('../gdrive-service');
 const GoogleSheetsService = require('./GoogleSheetsService');
+const EmailService = require('./EmailService');
 const DateHelper = require('../utils/DateHelper');
 const ResponseFormatter = require('../utils/ResponseFormatter');
 
@@ -32,6 +33,7 @@ class OrderProcessingPipeline {
     this.auspostLabelsDownloadService = new AuspostLabelsDownloadService();
     this.productTallyService = new ProductTallyService();
     this.googleSheetsService = new GoogleSheetsService();
+    this.emailService = new EmailService();
   }
 
   async execute() {
@@ -128,6 +130,7 @@ class OrderProcessingPipeline {
             batch: finalBatchNumbers[orderData.location],
             gopeople_status: false,
             gopeople_error: null,
+            gp_pickupdate: null,
             auspost_status: false,
             auspost_error: null,
             personalized_status: false,
@@ -317,13 +320,20 @@ class OrderProcessingPipeline {
             gopeopleApiResults.summary.totalOrders = gopeopleResult.recordCount;
             
             results['gopeople'] = gopeopleApiResults;
-            
-            // Update tracking array with gopeople results
+
+            // Create a map of order numbers to pickUpDate from transformed data
+            const pickupDateMap = {};
+            gopeopleResult.data.forEach(transformedOrder => {
+              pickupDateMap[transformedOrder.orderNumber] = transformedOrder.apiPayload.pickUpDate;
+            });
+
+            // Update tracking array with gopeople results and pickUpDate
             gopeopleApiResults.results.forEach(apiResult => {
               const trackingEntry = orderTrackingArray.find(entry => entry.order_number === apiResult.orderNumber);
               if (trackingEntry) {
                 trackingEntry.gopeople_status = apiResult.success;
                 trackingEntry.gopeople_error = apiResult.success ? null : apiResult.error;
+                trackingEntry.gp_pickupdate = pickupDateMap[apiResult.orderNumber] || null;
               }
             });
             
@@ -866,39 +876,84 @@ class OrderProcessingPipeline {
     let failureCount = 0;
 
     console.log(`\n🔄 === FOS UPDATE API EXECUTION DECISION ===`);
-    console.log(`📊 executeFosUpdate_flag: ${executeFosUpdate_flag} (dev_mode[3] = '${this.requestParams.dev_mode[3]}')`);
+    console.log(`📊 executeFosUpdate_flag: ${executeFosUpdate_flag} (dev_mode[4] = '${this.requestParams.dev_mode[4]}')`);
 
     if (orderTrackingArray.length > 0) {
-      const ordersForFosIds = orderTrackingArray
-        .filter(entry => entry.gopeople_status === true || entry.auspost_status === true)
-        .map(entry => entry.id);
+      // Separate successful and unsuccessful orders
+      const successfulOrders = orderTrackingArray.filter(entry =>
+        entry.gopeople_status === true || entry.auspost_status === true
+      );
 
-      const ordersForFosNumbers = orderTrackingArray
-        .filter(entry => entry.gopeople_status === true || entry.auspost_status === true)
-        .map(entry => entry.order_number);
+      const unsuccessfulOrders = orderTrackingArray.filter(entry =>
+        entry.gopeople_status !== true && entry.auspost_status !== true
+      );
 
-      console.log(`📋 Orders with successful logistics status: ${ordersForFosIds.length}`);
+      const successfulOrderIds = successfulOrders.map(entry => entry.id);
+      const successfulOrderNumbers = successfulOrders.map(entry => entry.order_number);
 
-      if (ordersForFosIds.length > 0 && executeFosUpdate_flag) {
-        console.log(`✅ Decision: EXECUTING FOS Update calls`);
+      const unsuccessfulOrderIds = unsuccessfulOrders.map(entry => entry.id);
+      const unsuccessfulOrderNumbers = unsuccessfulOrders.map(entry => entry.order_number);
+
+      console.log(`📋 Order status breakdown:`);
+      console.log(`  - Successful logistics orders: ${successfulOrderIds.length}`);
+      console.log(`  - Unsuccessful logistics orders: ${unsuccessfulOrderIds.length}`);
+      console.log(`  - Total orders: ${orderTrackingArray.length}`);
+
+      if ((successfulOrderIds.length > 0 || unsuccessfulOrderIds.length > 0) && executeFosUpdate_flag) {
+        console.log(`✅ Decision: EXECUTING FOS Update calls for BOTH successful and unsuccessful orders`);
         console.log(`=== END FOS UPDATE API DECISION ===\n`);
 
-        const fosExtendedParams = { ...this.requestParams, orderIds: ordersForFosIds, orderNumbers: ordersForFosNumbers };
+        console.log(`Executing dual FOS_update: ${successfulOrderIds.length} successful → 'Processed', ${unsuccessfulOrderIds.length} unsuccessful → 'Hold'`);
 
-        console.log(`Executing FOS_update script with ${ordersForFosIds.length} orders that went to personalized...`);
-        const fosUpdateResult = await scriptExecutor.executeScript('fos_update', this.SCRIPTS_CONFIG.fos_update, fosExtendedParams);
-        
+        // Use the new dual execution method
+        const fosUpdateResult = await scriptExecutor.executeFosUpdateDual(
+          this.SCRIPTS_CONFIG.fos_update,
+          successfulOrderIds,
+          successfulOrderNumbers,
+          unsuccessfulOrderIds,
+          unsuccessfulOrderNumbers
+        );
+
         if (fosUpdateResult.success) {
           results['fos_update'] = fosUpdateResult.data;
-          
+
           const { data: fosData, processedOrderNumbers: fosProcessedOrderNumbers, scriptKey: fosScriptKey, ...fosExecutionInfo } = fosUpdateResult;
           executionDetails['fos_update'] = fosExecutionInfo;
-          
+
           this.updateTrackingArrayFos(fosProcessedOrderNumbers, orderTrackingArray);
+
+          // Send email notifications for unsuccessful orders
+          let emailResults = null;
+          if (unsuccessfulOrderIds.length > 0) {
+            console.log(`\n📧 Triggering email notifications for ${unsuccessfulOrderIds.length} unsuccessful orders...`);
+            try {
+              emailResults = await this.emailService.sendUnsuccessfulOrdersEmails(unsuccessfulOrders);
+              console.log(`📧 Email notifications completed: ${emailResults.totalSent} sent, ${emailResults.totalFailed} failed`);
+
+              // Add email results to execution details
+              executionDetails['fos_update'].emailResults = emailResults;
+            } catch (error) {
+              console.error(`❌ Error sending email notifications:`, error.message);
+              executionDetails['fos_update'].emailResults = {
+                totalSent: 0,
+                totalFailed: unsuccessfulOrderIds.length,
+                error: error.message,
+                results: []
+              };
+            }
+          } else {
+            console.log(`📧 No unsuccessful orders, skipping email notifications`);
+            executionDetails['fos_update'].emailResults = {
+              totalSent: 0,
+              totalFailed: 0,
+              results: []
+            };
+          }
+
           successCount++;
         } else {
           results['fos_update'] = null;
-          
+
           const { data: fosData, processedOrderNumbers: fosProcessedOrderNumbers, scriptKey: fosScriptKey, ...fosExecutionInfo } = fosUpdateResult;
           executionDetails['fos_update'] = fosExecutionInfo;
           failureCount++;
@@ -918,7 +973,7 @@ class OrderProcessingPipeline {
       this.handleFosSkipped(results, executionDetails, 'No orders found to process');
       failureCount++;
     }
-    
+
     return { successCount, failureCount };
   }
 

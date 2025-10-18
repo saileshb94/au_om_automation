@@ -6,9 +6,116 @@ class ScriptExecutorService {
     this.connection = connection;
   }
 
+  async executeFosUpdateDual(scriptConfig, successfulOrderIds, successfulOrderNumbers, unsuccessfulOrderIds, unsuccessfulOrderNumbers) {
+    const startTime = Date.now();
+    const scriptKey = 'fos_update';
+    const results = {
+      successful: { affectedRows: 0, processedOrderNumbers: [] },
+      unsuccessful: { affectedRows: 0, processedOrderNumbers: [] }
+    };
+
+    try {
+      console.log(`\n🔄 === DUAL FOS UPDATE EXECUTION ===`);
+      console.log(`Successful orders: ${successfulOrderIds.length}, Unsuccessful orders: ${unsuccessfulOrderIds.length}`);
+
+      // Execute successful orders update
+      if (successfulOrderIds.length > 0) {
+        console.log(`\n📝 Executing FOS update for SUCCESSFUL orders (→ 'Processed')...`);
+        const successfulParams = { successfulOrderIds, orderNumbers: successfulOrderNumbers };
+        const { query: successfulQuery, params: successfulQueryParams } = QueryBuilder.buildDynamicQuery(
+          scriptConfig.scriptModule.querySuccessful,
+          successfulParams,
+          scriptKey
+        );
+
+        console.log(`Successful query:`, successfulQuery);
+        console.log(`Query parameters:`, successfulQueryParams);
+
+        const [successfulRawResults] = await this.connection.execute(successfulQuery, successfulQueryParams);
+        const successfulTransformed = scriptConfig.scriptModule.transform(successfulRawResults, successfulOrderNumbers, true);
+
+        results.successful.affectedRows = successfulTransformed.affectedRows || 0;
+        results.successful.processedOrderNumbers = successfulTransformed.processedOrderNumbers || [];
+        results.successful.updateResult = successfulTransformed.updateResult;
+      } else {
+        console.log(`⏭️  Skipping successful orders update (0 orders)`);
+      }
+
+      // Execute unsuccessful orders update
+      if (unsuccessfulOrderIds.length > 0) {
+        console.log(`\n📝 Executing FOS update for UNSUCCESSFUL orders (→ 'Hold')...`);
+        const unsuccessfulParams = { unsuccessfulOrderIds, orderNumbers: unsuccessfulOrderNumbers };
+        const { query: unsuccessfulQuery, params: unsuccessfulQueryParams } = QueryBuilder.buildDynamicQuery(
+          scriptConfig.scriptModule.queryUnsuccessful,
+          unsuccessfulParams,
+          scriptKey
+        );
+
+        console.log(`Unsuccessful query:`, unsuccessfulQuery);
+        console.log(`Query parameters:`, unsuccessfulQueryParams);
+
+        const [unsuccessfulRawResults] = await this.connection.execute(unsuccessfulQuery, unsuccessfulQueryParams);
+        const unsuccessfulTransformed = scriptConfig.scriptModule.transform(unsuccessfulRawResults, unsuccessfulOrderNumbers, false);
+
+        results.unsuccessful.affectedRows = unsuccessfulTransformed.affectedRows || 0;
+        results.unsuccessful.processedOrderNumbers = unsuccessfulTransformed.processedOrderNumbers || [];
+        results.unsuccessful.updateResult = unsuccessfulTransformed.updateResult;
+      } else {
+        console.log(`⏭️  Skipping unsuccessful orders update (0 orders)`);
+      }
+
+      const executionTime = Date.now() - startTime;
+      console.log(`\n✅ FOS Update completed:`);
+      console.log(`  - Successful orders affected: ${results.successful.affectedRows}`);
+      console.log(`  - Unsuccessful orders affected: ${results.unsuccessful.affectedRows}`);
+      console.log(`  - Total execution time: ${executionTime}ms`);
+      console.log(`=== END DUAL FOS UPDATE EXECUTION ===\n`);
+
+      // Combine processed order numbers
+      const allProcessedOrderNumbers = [
+        ...results.successful.processedOrderNumbers,
+        ...results.unsuccessful.processedOrderNumbers
+      ];
+
+      return {
+        scriptKey,
+        name: scriptConfig.name,
+        success: true,
+        recordCount: results.successful.affectedRows + results.unsuccessful.affectedRows,
+        executionTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: {
+          successfulOrders: successfulOrderIds.length,
+          unsuccessfulOrders: unsuccessfulOrderIds.length
+        },
+        data: results,
+        processedOrderNumbers: allProcessedOrderNumbers
+      };
+
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      console.error(`Dual FOS_update failed:`, error);
+
+      return {
+        scriptKey,
+        name: scriptConfig.name,
+        success: false,
+        error: error.message,
+        executionTime,
+        timestamp: new Date().toISOString(),
+        appliedParams: {
+          successfulOrders: successfulOrderIds.length,
+          unsuccessfulOrders: unsuccessfulOrderIds.length
+        },
+        data: null,
+        processedOrderNumbers: []
+      };
+    }
+  }
+
   async executeScript(scriptKey, scriptConfig, requestParams = {}) {
     const startTime = Date.now();
-    
+
     try {
       console.log(`Executing script: ${scriptKey} with params:`, requestParams);
 

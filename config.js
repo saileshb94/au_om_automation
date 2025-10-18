@@ -1488,8 +1488,186 @@ const GOOGLE_SHEETS_CONFIG = {
     'count_success_orders',
     'orders',
     'failed_orders',
+    'gp_timeframe',
     'timestamp'
   ]
+};
+
+// ============================================================================
+// EMAIL NOTIFICATION CONFIGURATION (SendGrid) - Store-Specific Recipients
+// ============================================================================
+
+const EMAIL_CONFIG = {
+  // SendGrid API configuration
+  sendgridApiKey: process.env.SENDGRID_API_KEY,
+
+  // From email (same for all stores, MUST be verified in SendGrid)
+  from: {
+    email: 'orders@em9870.flowerchimp.com',  // MUST be verified in SendGrid
+    name: 'Order Processing Alerts'
+  },
+
+  // Store-specific recipient configuration
+  // shop_id 10 = LVLY, shop_id 6 = Bloomeroo (BL)
+  recipients: {
+    LVLY: {
+      to: ['sailesh@limitless.my']
+    },
+    BL: {
+      to: ['sailesh@limitless.my']
+    },
+    default: {
+      // Fallback if store cannot be determined
+      to: ['sailesh@limitless.my']
+    }
+  },
+
+  // Helper function to get recipients based on store
+  getRecipients: (store) => {
+    if (store === 'LVLY') {
+      return EMAIL_CONFIG.recipients.LVLY;
+    } else if (store === 'BL') {
+      return EMAIL_CONFIG.recipients.BL;
+    } else {
+      console.warn(`⚠️ Unknown store: ${store}, using default recipients`);
+      return EMAIL_CONFIG.recipients.default;
+    }
+  },
+
+  // Email template for unsuccessful orders
+  template: {
+    // Subject includes location, order number, and store
+    subject: (order) => `⚠️ Order Processing Failed - ${order.location} - Order #${order.order_number} - ${order.store || 'Unknown Store'}`,
+
+    // HTML email body generator
+    generateBody: (order) => `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f44336; color: white; padding: 20px; border-radius: 5px 5px 0 0; }
+          .header h1 { margin: 0; font-size: 24px; }
+          .store-badge { display: inline-block; background-color: ${order.store === 'LVLY' ? '#2196F3' : '#9C27B0'}; color: white; padding: 5px 15px; border-radius: 20px; font-size: 14px; margin-left: 10px; }
+          .content { background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+          .section { margin-bottom: 25px; }
+          .section-title { font-size: 18px; font-weight: bold; color: #f44336; margin-bottom: 10px; border-bottom: 2px solid #f44336; padding-bottom: 5px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; background-color: white; }
+          th, td { padding: 12px; text-align: left; border: 1px solid #ddd; }
+          th { background-color: #f44336; color: white; font-weight: bold; }
+          tr:nth-child(even) { background-color: #f9f9f9; }
+          .status-success { color: #4caf50; font-weight: bold; }
+          .status-fail { color: #f44336; font-weight: bold; }
+          .error-box { background-color: #ffebee; border-left: 4px solid #f44336; padding: 15px; margin: 10px 0; }
+          .footer { margin-top: 20px; padding-top: 20px; border-top: 2px solid #ddd; font-size: 12px; color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>⚠️ Order Processing Failed <span class="store-badge">${order.store || 'N/A'}</span></h1>
+          </div>
+
+          <div class="content">
+            <!-- ORDER INFORMATION SECTION -->
+            <div class="section">
+              <div class="section-title">📦 Order Information</div>
+              <table>
+                <tr><th>Field</th><th>Value</th></tr>
+                <tr><td><strong>Order Number</strong></td><td>${order.order_number}</td></tr>
+                <tr><td><strong>Store/Brand</strong></td><td><strong style="color: ${order.store === 'LVLY' ? '#2196F3' : '#9C27B0'};">${order.store || 'N/A'}</strong></td></tr>
+                <tr><td><strong>Location</strong></td><td>${order.location || 'N/A'}</td></tr>
+                <tr><td><strong>Delivery Date</strong></td><td>${order.delivery_date || 'N/A'}</td></tr>
+                <tr><td><strong>Service Type</strong></td><td>${order.is_same_day || 'N/A'}</td></tr>
+                <tr><td><strong>Batch Number</strong></td><td>${order.batch || 'N/A'}</td></tr>
+              </table>
+            </div>
+
+            <!-- LOGISTICS STATUS SECTION -->
+            <div class="section">
+              <div class="section-title">🚚 Logistics Status</div>
+              <table>
+                <tr><th>Provider</th><th>Status</th><th>Error Details</th></tr>
+                <tr>
+                  <td><strong>GoPeople</strong></td>
+                  <td class="${order.gopeople_status ? 'status-success' : 'status-fail'}">
+                    ${order.gopeople_status ? '✅ Success' : '❌ Failed'}
+                  </td>
+                  <td>${order.gopeople_error || '-'}</td>
+                </tr>
+                <tr>
+                  <td><strong>AusPost</strong></td>
+                  <td class="${order.auspost_status ? 'status-success' : 'status-fail'}">
+                    ${order.auspost_status ? '✅ Success' : '❌ Failed'}
+                  </td>
+                  <td>${order.auspost_error || '-'}</td>
+                </tr>
+              </table>
+
+              ${(order.gopeople_error || order.auspost_error) ? `
+                <div class="error-box">
+                  <strong>⚠️ Primary Error:</strong><br>
+                  ${order.gopeople_error || order.auspost_error}
+                </div>
+              ` : ''}
+            </div>
+
+            <!-- PROCESSING STATUS SECTION -->
+            <div class="section">
+              <div class="section-title">⚙️ Processing Status</div>
+              <table>
+                <tr><th>Process</th><th>Status</th></tr>
+                <tr>
+                  <td><strong>Personalized Items</strong></td>
+                  <td class="${order.personalized_status ? 'status-success' : 'status-fail'}">
+                    ${order.personalized_status ? '✅ Processed' : '❌ Not Processed'}
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Packing Slip</strong></td>
+                  <td class="${order.packing_slip_status ? 'status-success' : 'status-fail'}">
+                    ${order.packing_slip_status ? '✅ Generated' : '❌ Not Generated'}
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Message Cards</strong></td>
+                  <td class="${order.message_cards_status ? 'status-success' : 'status-fail'}">
+                    ${order.message_cards_status ? '✅ Generated' : '❌ Not Generated'}
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>FOS Status Update</strong></td>
+                  <td class="${order.updateProcessingStatus ? 'status-success' : 'status-fail'}">
+                    ${order.updateProcessingStatus ? '✅ Updated to HOLD' : '❌ Not Updated'}
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+            <!-- PRODUCTS SECTION -->
+            ${order.order_products ? `
+              <div class="section">
+                <div class="section-title">📋 Order Products</div>
+                <div style="background-color: white; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
+                  ${order.order_products}
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- FOOTER -->
+            <div class="footer">
+              <p><strong>Email sent:</strong> ${new Date().toISOString()}</p>
+              <p><strong>Store:</strong> ${order.store || 'Unknown'} | <strong>Recipients:</strong> This email was sent to the ${order.store} operations team</p>
+              <p><strong>Action Required:</strong> Please review this order in the system and take appropriate action.</p>
+              <p style="color: #999; margin-top: 15px;">This is an automated notification from the AU Order Management system.</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  }
 };
 
 
@@ -1516,5 +1694,6 @@ module.exports = {
   AUSPOST_LABELS_API_CONFIG,
   PRODUCT_TALLY_API_CONFIG,
   PRODUCT_TALLY_RULES,
-  GOOGLE_SHEETS_CONFIG
+  GOOGLE_SHEETS_CONFIG,
+  EMAIL_CONFIG
 };

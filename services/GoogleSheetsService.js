@@ -77,7 +77,7 @@ class GoogleSheetsService {
    * @returns {Array} Array of row values matching column order
    */
   transformOrdersToRows(orderTrackingArray) {
-    const timestamp = new Date().toISOString();
+    const timestamp = this.convertToMelbourneDateTime(new Date().toISOString());
 
     return orderTrackingArray.map(order => {
       return this.config.columns.map(column => {
@@ -237,6 +237,59 @@ class GoogleSheetsService {
   }
 
   /**
+   * Extract time from pickUpDate string without timezone conversion
+   * Simply extracts the HH:MM portion from the pickUpDate string
+   * @param {string} pickUpDateString - Format: "YYYY-MM-DD HH:MM:SS+ZZZZ"
+   * @returns {string} Time in HH:MM format (as-is from the string)
+   */
+  extractTimeInMelbourneTimezone(pickUpDateString) {
+    if (!pickUpDateString) {
+      return '';
+    }
+
+    try {
+      // Parse the pickUpDate string (format: "2025-10-17 14:30:00+1100")
+      // Extract the time portion directly without timezone conversion
+      const match = pickUpDateString.match(/\d{4}-\d{2}-\d{2}\s+(\d{2}):(\d{2}):\d{2}/);
+
+      if (match) {
+        const hours = match[1];
+        const minutes = match[2];
+        return `${hours}:${minutes}`;
+      }
+
+      return '';
+    } catch (error) {
+      console.error(`Error parsing pickUpDate: ${pickUpDateString}`, error);
+      return '';
+    }
+  }
+
+  /**
+   * Convert timestamp from UTC to Melbourne datetime format
+   * @param {string} isoTimestamp - ISO timestamp string
+   * @returns {string} Formatted Melbourne datetime
+   */
+  convertToMelbourneDateTime(isoTimestamp) {
+    try {
+      const date = new Date(isoTimestamp);
+      return date.toLocaleString('en-AU', {
+        timeZone: 'Australia/Melbourne',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    } catch (error) {
+      console.error(`Error converting timestamp: ${isoTimestamp}`, error);
+      return isoTimestamp;
+    }
+  }
+
+  /**
    * Generate batch details from order tracking array
    * Groups orders by (store, delivery_date, location, is_same_day, batch)
    * @param {Array} orderTrackingArray - Array of order tracking objects
@@ -262,7 +315,8 @@ class GoogleSheetsService {
           same_day: order.is_same_day,
           batch: order.batch,
           successOrders: [],
-          failedOrders: []
+          failedOrders: [],
+          gpPickupDates: [] // Store GP pickup dates for this batch
         };
       }
 
@@ -271,6 +325,11 @@ class GoogleSheetsService {
 
       if (isSuccess) {
         batchMap[batchKey].successOrders.push(order.order_number);
+
+        // Collect GP pickup dates for successful GoPeople orders
+        if (order.gopeople_status === true && order.gp_pickupdate) {
+          batchMap[batchKey].gpPickupDates.push(order.gp_pickupdate);
+        }
       } else {
         // Failed: both gopeople_status AND auspost_status are false
         batchMap[batchKey].failedOrders.push(order.order_number);
@@ -278,17 +337,29 @@ class GoogleSheetsService {
     });
 
     // Transform map to array of batch details
-    const batchDetails = Object.values(batchMap).map(batch => ({
-      store: batch.store,
-      delivery_date: batch.delivery_date,
-      city: batch.city,
-      same_day: batch.same_day,
-      batch: batch.batch,
-      count_success_orders: batch.successOrders.length,
-      orders: batch.successOrders.join(', '),
-      failed_orders: batch.failedOrders.join(', '),
-      timestamp: timestamp
-    }));
+    const batchDetails = Object.values(batchMap).map(batch => {
+      // Extract unique GP timeframes (convert to Melbourne HH:MM format)
+      let gpTimeframe = '';
+      if (batch.gpPickupDates.length > 0) {
+        const uniqueTimes = [...new Set(batch.gpPickupDates.map(pickupDate =>
+          this.extractTimeInMelbourneTimezone(pickupDate)
+        ))].filter(time => time !== '');
+        gpTimeframe = uniqueTimes.join(', ');
+      }
+
+      return {
+        store: batch.store,
+        delivery_date: batch.delivery_date,
+        city: batch.city,
+        same_day: batch.same_day,
+        batch: batch.batch,
+        count_success_orders: batch.successOrders.length,
+        orders: batch.successOrders.join(', '),
+        failed_orders: batch.failedOrders.join(', '),
+        gp_timeframe: gpTimeframe,
+        timestamp: this.convertToMelbourneDateTime(timestamp)
+      };
+    });
 
     console.log(`Generated ${batchDetails.length} batch detail entries from ${orderTrackingArray.length} orders`);
     return batchDetails;

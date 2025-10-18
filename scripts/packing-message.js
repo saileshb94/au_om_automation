@@ -15,7 +15,8 @@ SELECT
             'quantity', sop.quantity,
             'qty', sop.quantity,
             'src', spi.src,
-            'image1', spi.src
+            'image1', spi.src,
+            'properties',sop.properties
         )
     ) as products,
     sode.recipient_name,
