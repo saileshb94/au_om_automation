@@ -184,6 +184,13 @@ class OrderProcessingPipeline {
       console.log(`\n[${requestId}] ━━━ STAGE 2.75: FOLDER PRE-CREATION ━━━`);
       folderPreCreationResults = await this.preCreateFolders(orderTrackingArray, deliveryDate, finalBatchNumbers);
 
+      // Wait for Google Drive API propagation
+      if (folderPreCreationResults && folderPreCreationResults.summary.successfulCreations > 0) {
+        console.log(`\n⏳ Waiting 5 seconds for Google Drive folder propagation...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        console.log(`✅ Propagation delay complete, proceeding to next stage\n`);
+      }
+
       // Step 2.8: Process Labels (GP or AusPost based on is_same_day) after folder creation
       console.log(`\n[${requestId}] ━━━ STAGE 2.8: LABELS PROCESSING ━━━`);
       let labelsApiResults = null;
