@@ -213,7 +213,17 @@ class OrderProcessingRoutes {
         console.log(`[TEST] Date: ${date}`);
         console.log(`[TEST] Dev Mode: ${dev_mode}`);
         console.log(`[TEST] Is Same Day: ${is_same_day} (${isSameDayNum === 1 ? 'GoPeople' : 'AusPost'})`);
+        // Fix URL decoding issue: + in timezone becomes space, convert back to +
+        let processedTimeframe = null;
+        if (time_frame) {
+          // Pattern: "2025-10-19 11:30:00 1100" -> "2025-10-19 11:30:00+1100"
+          processedTimeframe = time_frame.replace(/(\d{2}:\d{2}:\d{2})\s+(\d{4})$/, '$1+$2');
+        }
+
         console.log(`[TEST] Time Frame: ${time_frame || 'Not provided (will calculate automatically)'}`);
+        if (time_frame && processedTimeframe !== time_frame) {
+          console.log(`[TEST] Time Frame (corrected): ${processedTimeframe}`);
+        }
         console.log(`[TEST] Order IDs: ${orderIdsArray.join(', ')} (${orderIdsArray.length} orders)`);
         console.log(`[TEST] === END REQUEST INFO ===\n`);
 
@@ -224,7 +234,7 @@ class OrderProcessingRoutes {
           is_same_day: String(isSameDayNum),
           orderIds: orderIdsArray,
           isManualProcessing: true,
-          manualTimeframe: time_frame || null,
+          manualTimeframe: processedTimeframe,
           // Add default parameters for pipeline compatibility
           locations: [],
           hasLocationFilter: false,
