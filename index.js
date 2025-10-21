@@ -29,14 +29,15 @@ const dbConfig = {
   port: process.env.DB_PORT || 3306
 };
 
-// GoPeople API configuration
+// GoPeople API configuration - dual credentials for production and test
 const gopeopleConfig = {
-  token: process.env.GOPEOPLE_API_TOKEN,
+  token_prod: process.env.GOPEOPLE_API_TOKEN_PROD,
+  token_test: process.env.GOPEOPLE_API_TOKEN_TEST,
   url: GOPEOPLE_API_URL,
   timeframeUrl: GOPEOPLE_TIMEFRAME_API_URL
 };
 
-// Auspost API configuration - dual credentials for LVLY and Bloomeroo
+// Auspost API configuration - dual credentials for LVLY and Bloomeroo (production and test)
 const auspostConfig = {
   lvly: AUSPOST_CREDENTIALS.LVLY,
   bloomeroo: AUSPOST_CREDENTIALS.BLOOMEROO

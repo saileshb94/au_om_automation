@@ -22,10 +22,16 @@ class OrderProcessingPipeline {
     this.auspostConfig = auspostConfig;
     this.SCRIPTS_CONFIG = scriptsConfig;
     this.batchService = new BatchManagementService();
-    this.gopeopleService = new GoPeopleApiService(gopeopleConfig.token, gopeopleConfig.url);
+    this.gopeopleService = new GoPeopleApiService(
+      gopeopleConfig.token_prod,
+      gopeopleConfig.token_test,
+      gopeopleConfig.url,
+      requestParams.dev_mode
+    );
     this.auspostService = new AuspostApiService(
       auspostConfig.lvly,
-      auspostConfig.bloomeroo
+      auspostConfig.bloomeroo,
+      requestParams.dev_mode
     );
     this.personalizedApiService = new PersonalizedApiService();
     this.gpLabelsApiService = new GpLabelsApiService();

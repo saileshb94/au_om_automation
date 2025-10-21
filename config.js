@@ -582,6 +582,7 @@ const AUSPOST_LABELS_CONFIG = {
  * Auspost API Credentials Configuration
  * Separate credentials for LVLY (shop_id=10) and Bloomeroo (shop_id=6)
  * Account numbers are location-specific
+ * Supports both production and test credentials based on dev_mode[0]
  */
 const AUSPOST_CREDENTIALS = {
   LVLY: {
@@ -593,7 +594,8 @@ const AUSPOST_CREDENTIALS = {
       'Adelaide': '01416548',
       'Brisbane': '01416548'
     },
-    authorization: process.env.AUSPOST_AUTHORIZATION
+    authorization_prod: process.env.AUSPOST_AUTHORIZATION_PROD,
+    authorization_test: process.env.AUSPOST_AUTHORIZATION_TEST
   },
   BLOOMEROO: {
     url: 'https://digitalapi.auspost.com.au/test/shipping/v1/shipments',
@@ -604,7 +606,8 @@ const AUSPOST_CREDENTIALS = {
       'Adelaide': '01416548',
       'Brisbane': '01416548'
     },
-    authorization: process.env.AUSPOST_BL_AUTHORIZATION || process.env.AUSPOST_AUTHORIZATION
+    authorization_prod: process.env.AUSPOST_BL_AUTHORIZATION_PROD || process.env.AUSPOST_AUTHORIZATION_PROD,
+    authorization_test: process.env.AUSPOST_BL_AUTHORIZATION_TEST || process.env.AUSPOST_AUTHORIZATION_TEST
   }
 };
 
@@ -1604,56 +1607,7 @@ const EMAIL_CONFIG = {
                   <td>${order.auspost_error || '-'}</td>
                 </tr>
               </table>
-
-              ${(order.gopeople_error || order.auspost_error) ? `
-                <div class="error-box">
-                  <strong>⚠️ Primary Error:</strong><br>
-                  ${order.gopeople_error || order.auspost_error}
-                </div>
-              ` : ''}
             </div>
-
-            <!-- PROCESSING STATUS SECTION -->
-            <div class="section">
-              <div class="section-title">⚙️ Processing Status</div>
-              <table>
-                <tr><th>Process</th><th>Status</th></tr>
-                <tr>
-                  <td><strong>Personalized Items</strong></td>
-                  <td class="${order.personalized_status ? 'status-success' : 'status-fail'}">
-                    ${order.personalized_status ? '✅ Processed' : '❌ Not Processed'}
-                  </td>
-                </tr>
-                <tr>
-                  <td><strong>Packing Slip</strong></td>
-                  <td class="${order.packing_slip_status ? 'status-success' : 'status-fail'}">
-                    ${order.packing_slip_status ? '✅ Generated' : '❌ Not Generated'}
-                  </td>
-                </tr>
-                <tr>
-                  <td><strong>Message Cards</strong></td>
-                  <td class="${order.message_cards_status ? 'status-success' : 'status-fail'}">
-                    ${order.message_cards_status ? '✅ Generated' : '❌ Not Generated'}
-                  </td>
-                </tr>
-                <tr>
-                  <td><strong>FOS Status Update</strong></td>
-                  <td class="${order.updateProcessingStatus ? 'status-success' : 'status-fail'}">
-                    ${order.updateProcessingStatus ? '✅ Updated to HOLD' : '❌ Not Updated'}
-                  </td>
-                </tr>
-              </table>
-            </div>
-
-            <!-- PRODUCTS SECTION -->
-            ${order.order_products ? `
-              <div class="section">
-                <div class="section-title">📋 Order Products</div>
-                <div style="background-color: white; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
-                  ${order.order_products}
-                </div>
-              </div>
-            ` : ''}
 
             <!-- FOOTER -->
             <div class="footer">

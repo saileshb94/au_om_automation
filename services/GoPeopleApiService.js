@@ -1,9 +1,24 @@
 const axios = require('axios');
 
 class GoPeopleApiService {
-  constructor(apiToken, apiUrl) {
-    this.GOPEOPLE_API_TOKEN = apiToken;
+  constructor(apiTokenProd, apiTokenTest, apiUrl, devMode) {
+    this.GOPEOPLE_API_TOKEN_PROD = apiTokenProd;
+    this.GOPEOPLE_API_TOKEN_TEST = apiTokenTest;
     this.GOPEOPLE_API_URL = apiUrl;
+    this.devMode = devMode;
+
+    // Select token based on dev_mode[0]
+    // dev_mode[0] = '1' → Production credentials
+    // dev_mode[0] = '0' → Test credentials
+    const useProduction = devMode && devMode[0] === '1';
+    this.GOPEOPLE_API_TOKEN = useProduction ? this.GOPEOPLE_API_TOKEN_PROD : this.GOPEOPLE_API_TOKEN_TEST;
+
+    console.log(`\n🔑 === GOPEOPLE API CREDENTIALS SELECTION ===`);
+    console.log(`dev_mode: ${devMode}`);
+    console.log(`dev_mode[0]: ${devMode ? devMode[0] : 'N/A'}`);
+    console.log(`Using ${useProduction ? 'PRODUCTION' : 'TEST'} credentials`);
+    console.log(`Token configured: ${this.GOPEOPLE_API_TOKEN ? 'YES' : 'NO'}`);
+    console.log(`=== END CREDENTIALS SELECTION ===\n`);
   }
 
   async callGoPeopleAPI(orderData) {

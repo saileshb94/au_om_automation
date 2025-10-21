@@ -2,26 +2,36 @@ const axios = require('axios');
 const { AUSPOST_LABELS_CONFIG } = require('../config');
 
 class AuspostApiService {
-  constructor(lvlyConfig, bloomerooConfig) {
-    // Store both credential sets
+  constructor(lvlyConfig, bloomerooConfig, devMode) {
+    this.devMode = devMode;
+
+    // Determine if using production credentials based on dev_mode[0]
+    // dev_mode[0] = '1' → Production credentials
+    // dev_mode[0] = '0' → Test credentials
+    const useProduction = devMode && devMode[0] === '1';
+
+    // Store both credential sets with appropriate authorization based on dev_mode
     this.LVLY_CONFIG = {
       url: lvlyConfig.url,
       accountNumbers: lvlyConfig.accountNumbers,
-      authorization: lvlyConfig.authorization
+      authorization: useProduction ? lvlyConfig.authorization_prod : lvlyConfig.authorization_test
     };
 
     this.BLOOMEROO_CONFIG = {
       url: bloomerooConfig.url,
       accountNumbers: bloomerooConfig.accountNumbers,
-      authorization: bloomerooConfig.authorization
+      authorization: useProduction ? bloomerooConfig.authorization_prod : bloomerooConfig.authorization_test
     };
 
     console.log(`\n🚀 === AUSPOST API SERVICE INITIALIZED ===`);
-    console.log(`LVLY Configuration:`);
+    console.log(`dev_mode: ${devMode}`);
+    console.log(`dev_mode[0]: ${devMode ? devMode[0] : 'N/A'}`);
+    console.log(`Using ${useProduction ? 'PRODUCTION' : 'TEST'} credentials`);
+    console.log(`\nLVLY Configuration:`);
     console.log(`  API URL: ${this.LVLY_CONFIG.url}`);
     console.log(`  Account Numbers configured for locations: ${Object.keys(this.LVLY_CONFIG.accountNumbers).join(', ')}`);
     console.log(`  Authorization configured: ${this.LVLY_CONFIG.authorization ? 'YES' : 'NO'}`);
-    console.log(`BLOOMEROO Configuration:`);
+    console.log(`\nBLOOMEROO Configuration:`);
     console.log(`  API URL: ${this.BLOOMEROO_CONFIG.url}`);
     console.log(`  Account Numbers configured for locations: ${Object.keys(this.BLOOMEROO_CONFIG.accountNumbers).join(', ')}`);
     console.log(`  Authorization configured: ${this.BLOOMEROO_CONFIG.authorization ? 'YES' : 'NO'}`);

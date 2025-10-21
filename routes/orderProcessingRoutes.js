@@ -29,7 +29,7 @@ class OrderProcessingRoutes {
     // GoPeople timeframe endpoint
     app.get('/gopeopletimeframe', async (req, res) => {
       try {
-        const { dateStart, dateEnd } = req.query;
+        const { dateStart, dateEnd, dev_mode } = req.query;
 
         // Validate required parameters
         if (!dateStart || !dateEnd) {
@@ -39,12 +39,17 @@ class OrderProcessingRoutes {
           });
         }
 
-        console.log(`GoPeople timeframe request - dateStart: ${dateStart}, dateEnd: ${dateEnd}`);
+        console.log(`GoPeople timeframe request - dateStart: ${dateStart}, dateEnd: ${dateEnd}, dev_mode: ${dev_mode || '111111'}`);
 
-        // Create service instance and make API call
+        // Parse dev_mode to determine credential selection (default to '111111' if not provided)
+        const parsedDevMode = ValidationHelper.parseDevMode(dev_mode);
+
+        // Create service instance and make API call with credential selection
         const timeframeService = new GoPeopleTimeframeService(
-          gopeopleConfig.token,
-          gopeopleConfig.timeframeUrl
+          gopeopleConfig.token_prod,
+          gopeopleConfig.token_test,
+          gopeopleConfig.timeframeUrl,
+          parsedDevMode
         );
         const result = await timeframeService.getShiftTimeframe(dateStart, dateEnd);
 
