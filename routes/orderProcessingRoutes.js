@@ -218,9 +218,35 @@ class OrderProcessingRoutes {
         console.log(`[TEST] Date: ${date}`);
         console.log(`[TEST] Dev Mode: ${dev_mode}`);
         console.log(`[TEST] Is Same Day: ${is_same_day} (${isSameDayNum === 1 ? 'GoPeople' : 'AusPost'})`);
-        console.log(`[TEST] Time Frame: ${time_frame || 'Not provided (will calculate automatically)'}`);
+        console.log(`[TEST] Time Frame (raw): ${time_frame || 'Not provided (will calculate automatically)'}`);
         console.log(`[TEST] Order IDs: ${orderIdsArray.join(', ')} (${orderIdsArray.length} orders)`);
         console.log(`[TEST] === END REQUEST INFO ===\n`);
+
+        // FIX: Detect and correct timeframe if + sign was URL-decoded as space
+        // HTTP decodes + as space in URLs, so "2025-10-23 11:30:00+1100" becomes "2025-10-23 11:30:00 1100"
+        let correctedTimeframe = time_frame;
+        if (time_frame) {
+          // Pattern: "2025-10-23 11:30:00 1100" should be "2025-10-23 11:30:00+1100"
+          // Regex: datetime, then space, then timezone offset (with optional +/-)
+          const timeframePattern = /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+([+-]?\d{2}:?\d{2})$/;
+          const match = time_frame.match(timeframePattern);
+
+          if (match) {
+            // Reconstruct with + sign
+            const dateTimePart = match[1];  // "2025-10-23 11:30:00"
+            let timezonePart = match[2];     // "1100" or "11:00" or "+1100" or "-0500"
+
+            // Ensure timezone doesn't already have a sign
+            if (!timezonePart.startsWith('+') && !timezonePart.startsWith('-')) {
+              timezonePart = '+' + timezonePart;
+            }
+
+            correctedTimeframe = `${dateTimePart}${timezonePart}`;
+            console.log(`⚠️ [TIMEFRAME FIX] URL decoded + as space. Corrected: "${time_frame}" → "${correctedTimeframe}"`);
+          } else {
+            console.log(`✅ [TIMEFRAME CHECK] Format looks correct: "${time_frame}"`);
+          }
+        }
 
         // Create manual request parameters for the pipeline
         const manualRequestParams = {
@@ -229,7 +255,7 @@ class OrderProcessingRoutes {
           is_same_day: String(isSameDayNum),
           orderIds: orderIdsArray,
           isManualProcessing: true,
-          manualTimeframe: time_frame || null,
+          manualTimeframe: correctedTimeframe || null,
           // Add default parameters for pipeline compatibility
           locations: [],
           hasLocationFilter: false,
