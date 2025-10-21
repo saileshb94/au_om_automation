@@ -42,12 +42,14 @@ echo Authenticated as: %ACCOUNT%
 echo.
 
 REM Deploy to Cloud Run
+REM Note: --launch-stage=BETA is required because the service uses manual scaling (a BETA feature)
 gcloud run deploy lvlyaustraliaorders ^
     --source . ^
     --platform managed ^
     --region asia-southeast1 ^
     --project new-project-292307 ^
-    --allow-unauthenticated
+    --allow-unauthenticated ^
+    --launch-stage=BETA
 
 if %errorlevel% neq 0 (
     echo.
