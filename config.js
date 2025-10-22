@@ -8,15 +8,20 @@
 // ============================================================================
 
 /**
- * GoPeople API URL
+ * GoPeople API URLs - Production and Test
+ * dev_mode[0] = '1' → Production
+ * dev_mode[0] = '0' → Test
  */
-const GOPEOPLE_API_URL = 'http://api-demo.gopeople.com.au/book/instant';
+const GOPEOPLE_API_URL_PROD = 'https://api.gopeople.com.au/book/instant';
+const GOPEOPLE_API_URL_TEST = 'http://api-demo.gopeople.com.au/book/instant';
 
 /**
- * GoPeople Timeframe API URL
+ * GoPeople Timeframe API URLs - Production and Test
  * Used to query shift availability within a date range
+ * Note: Timeframe always uses production regardless of dev_mode[0]
  */
-const GOPEOPLE_TIMEFRAME_API_URL = 'http://api-demo.gopeople.com.au/shift';
+const GOPEOPLE_TIMEFRAME_API_URL_PROD = 'https://api.gopeople.com.au/shift';
+const GOPEOPLE_TIMEFRAME_API_URL_TEST = 'http://api-demo.gopeople.com.au/shift';
 
 /**
  * Location-based warehouse/pickup addresses for GoPeople API
@@ -1703,8 +1708,10 @@ const EMAIL_CONFIG = {
 // Export all configurations
 module.exports = {
   // GoPeople module exports
-  GOPEOPLE_API_URL,
-  GOPEOPLE_TIMEFRAME_API_URL,
+  GOPEOPLE_API_URL_PROD,
+  GOPEOPLE_API_URL_TEST,
+  GOPEOPLE_TIMEFRAME_API_URL_PROD,
+  GOPEOPLE_TIMEFRAME_API_URL_TEST,
   LOCATION_ADDRESSES,
   LOCATION_TIMEZONES,
   GOPEOPLE_PARCEL_DEFAULTS,

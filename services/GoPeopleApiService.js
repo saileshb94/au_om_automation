@@ -1,25 +1,28 @@
 const axios = require('axios');
 
 class GoPeopleApiService {
-  constructor(apiTokenProd, apiTokenTest, apiUrl, devMode) {
+  constructor(apiTokenProd, apiTokenTest, apiUrlProd, apiUrlTest, devMode) {
     this.GOPEOPLE_API_TOKEN_PROD = apiTokenProd;
     this.GOPEOPLE_API_TOKEN_TEST = apiTokenTest;
-    this.GOPEOPLE_API_URL = apiUrl;
+    this.GOPEOPLE_API_URL_PROD = apiUrlProd;
+    this.GOPEOPLE_API_URL_TEST = apiUrlTest;
     this.devMode = devMode;
 
-    // dev_mode[0] selects credentials (does NOT control API execution)
-    // dev_mode[0] = '1' → Production credentials
-    // dev_mode[0] = '0' → Test credentials
+    // dev_mode[0] selects credentials AND URL (does NOT control API execution)
+    // dev_mode[0] = '1' → Production credentials and URL
+    // dev_mode[0] = '0' → Test credentials and URL
     // APIs always execute if orders are available; dev_mode[0] only determines which environment to use
     const useProduction = devMode && devMode[0] === '1';
     this.GOPEOPLE_API_TOKEN = useProduction ? this.GOPEOPLE_API_TOKEN_PROD : this.GOPEOPLE_API_TOKEN_TEST;
+    this.GOPEOPLE_API_URL = useProduction ? this.GOPEOPLE_API_URL_PROD : this.GOPEOPLE_API_URL_TEST;
 
-    console.log(`\n🔑 === GOPEOPLE API CREDENTIALS SELECTION ===`);
+    console.log(`\n🔑 === GOPEOPLE API CREDENTIALS & URL SELECTION ===`);
     console.log(`dev_mode: ${devMode}`);
     console.log(`dev_mode[0]: ${devMode ? devMode[0] : 'N/A'}`);
-    console.log(`Using ${useProduction ? 'PRODUCTION' : 'TEST'} credentials`);
+    console.log(`Using ${useProduction ? 'PRODUCTION' : 'TEST'} environment`);
     console.log(`Token configured: ${this.GOPEOPLE_API_TOKEN ? 'YES' : 'NO'}`);
-    console.log(`=== END CREDENTIALS SELECTION ===\n`);
+    console.log(`API URL: ${this.GOPEOPLE_API_URL}`);
+    console.log(`=== END CREDENTIALS & URL SELECTION ===\n`);
   }
 
   async callGoPeopleAPI(orderData) {
@@ -27,7 +30,7 @@ class GoPeopleApiService {
       console.log(`\n🚀 === GOPEOPLE API REQUEST ===`);
       console.log(`Order Number: ${orderData.orderNumber}`);
       console.log(`API URL: ${this.GOPEOPLE_API_URL}`);
-      console.log(`Request Payload:`, JSON.stringify(orderData.apiPayload, null, 2));
+      // console.log(`Request Payload:`, JSON.stringify(orderData.apiPayload, null, 2));
       console.log(`=== END GOPEOPLE API REQUEST ===\n`);
 
       const response = await axios.post(
@@ -53,7 +56,7 @@ class GoPeopleApiService {
         console.log(`Barcodes:`, response.data.result.barcodes || 'N/A');
         console.log(`Address To:`, JSON.stringify(response.data.result.addressTo, null, 2));
       }
-      console.log(`Full Response Data:`, JSON.stringify(response.data, null, 2));
+      // console.log(`Full Response Data:`, JSON.stringify(response.data, null, 2));
       console.log(`=== END GOPEOPLE API RESPONSE ===\n`);
 
       const isSuccess = response.data.errorCode === 0 && (response.status === 200 || response.status === 201);

@@ -1,25 +1,32 @@
 const axios = require('axios');
 
 class GoPeopleTimeframeService {
-  constructor(apiTokenProd, apiTokenTest, timeframeApiUrl, devMode) {
+  constructor(apiTokenProd, apiTokenTest, timeframeApiUrlProd, timeframeApiUrlTest, devMode) {
     this.GOPEOPLE_API_TOKEN_PROD = apiTokenProd;
     this.GOPEOPLE_API_TOKEN_TEST = apiTokenTest;
-    this.GOPEOPLE_TIMEFRAME_API_URL = timeframeApiUrl;
+    this.GOPEOPLE_TIMEFRAME_API_URL_PROD = timeframeApiUrlProd;
+    this.GOPEOPLE_TIMEFRAME_API_URL_TEST = timeframeApiUrlTest;
     this.devMode = devMode;
 
-    // dev_mode[0] selects credentials (does NOT control API execution)
+    // IMPORTANT: Timeframe API ALWAYS uses PRODUCTION URL regardless of dev_mode[0]
+    // Only credentials are selected based on dev_mode[0]
+    this.GOPEOPLE_TIMEFRAME_API_URL = this.GOPEOPLE_TIMEFRAME_API_URL_PROD;
+
+    // dev_mode[0] selects credentials (does NOT control API execution or URL)
     // dev_mode[0] = '1' → Production credentials
     // dev_mode[0] = '0' → Test credentials
-    // APIs always execute; dev_mode[0] only determines which environment to use
+    // APIs always execute; dev_mode[0] only determines which credentials to use
     const useProduction = devMode && devMode[0] === '1';
     this.GOPEOPLE_API_TOKEN = useProduction ? this.GOPEOPLE_API_TOKEN_PROD : this.GOPEOPLE_API_TOKEN_TEST;
 
-    console.log(`\n🔑 === GOPEOPLE TIMEFRAME API CREDENTIALS SELECTION ===`);
+    console.log(`\n🔑 === GOPEOPLE TIMEFRAME API CREDENTIALS & URL SELECTION ===`);
     console.log(`dev_mode: ${devMode}`);
     console.log(`dev_mode[0]: ${devMode ? devMode[0] : 'N/A'}`);
     console.log(`Using ${useProduction ? 'PRODUCTION' : 'TEST'} credentials`);
     console.log(`Token configured: ${this.GOPEOPLE_API_TOKEN ? 'YES' : 'NO'}`);
-    console.log(`=== END CREDENTIALS SELECTION ===\n`);
+    console.log(`API URL: ${this.GOPEOPLE_TIMEFRAME_API_URL} (ALWAYS PRODUCTION)`);
+    // console.log(`API_TOKEN: ${this.GOPEOPLE_API_TOKEN}`);
+    console.log(`=== END CREDENTIALS & URL SELECTION ===\n`);
   }
 
   async getShiftTimeframe(dateStart, dateEnd) {

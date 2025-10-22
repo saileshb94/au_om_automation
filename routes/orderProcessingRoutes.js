@@ -48,7 +48,8 @@ class OrderProcessingRoutes {
         const timeframeService = new GoPeopleTimeframeService(
           gopeopleConfig.token_prod,
           gopeopleConfig.token_test,
-          gopeopleConfig.timeframeUrl,
+          gopeopleConfig.timeframeUrl_prod,
+          gopeopleConfig.timeframeUrl_test,
           parsedDevMode
         );
         const result = await timeframeService.getShiftTimeframe(dateStart, dateEnd);

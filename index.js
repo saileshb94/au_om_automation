@@ -8,7 +8,13 @@ const corsMiddleware = require('./middleware/corsMiddleware');
 const OrderProcessingRoutes = require('./routes/orderProcessingRoutes');
 
 // Import configuration
-const { GOPEOPLE_API_URL, GOPEOPLE_TIMEFRAME_API_URL, AUSPOST_CREDENTIALS } = require('./config');
+const {
+  GOPEOPLE_API_URL_PROD,
+  GOPEOPLE_API_URL_TEST,
+  GOPEOPLE_TIMEFRAME_API_URL_PROD,
+  GOPEOPLE_TIMEFRAME_API_URL_TEST,
+  AUSPOST_CREDENTIALS
+} = require('./config');
 
 // Import SQL scripts
 const ordersScript = require('./scripts/orders');
@@ -29,12 +35,14 @@ const dbConfig = {
   port: process.env.DB_PORT || 3306
 };
 
-// GoPeople API configuration - dual credentials for production and test
+// GoPeople API configuration - dual credentials and URLs for production and test
 const gopeopleConfig = {
   token_prod: process.env.GOPEOPLE_API_TOKEN_PROD,
   token_test: process.env.GOPEOPLE_API_TOKEN_TEST,
-  url: GOPEOPLE_API_URL,
-  timeframeUrl: GOPEOPLE_TIMEFRAME_API_URL
+  url_prod: GOPEOPLE_API_URL_PROD,
+  url_test: GOPEOPLE_API_URL_TEST,
+  timeframeUrl_prod: GOPEOPLE_TIMEFRAME_API_URL_PROD,
+  timeframeUrl_test: GOPEOPLE_TIMEFRAME_API_URL_TEST
 };
 
 // Auspost API configuration - dual credentials for LVLY and Bloomeroo (production and test)

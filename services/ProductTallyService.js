@@ -185,7 +185,7 @@ class ProductTallyService {
 
     // Process each table in the rules
     this.rules.tables.forEach(table => {
-      console.log(`\nTable: ${table.name}`);
+      // console.log(`\nTable: ${table.name}`);
 
       tallies[table.name] = {};
 
@@ -193,12 +193,12 @@ class ProductTallyService {
       table.rows.forEach(row => {
         if (row.type === 'simple') {
           // Simple row: label → single count value
-          console.log(`  Row: ${row.label} (simple)`);
+          // console.log(`  Row: ${row.label} (simple)`);
           const count = this.countMatchingProducts(allProducts, row.searchTexts, row.label);
           tallies[table.name][row.label] = count;
         } else if (row.type === 'complex') {
           // Complex row: label → nested object with multiple fields
-          console.log(`  Row: ${row.label} (complex, ${row.fields.length} field(s))`);
+          // console.log(`  Row: ${row.label} (complex, ${row.fields.length} field(s))`);
           tallies[table.name][row.label] = {};
 
           row.fields.forEach(field => {
@@ -224,8 +224,8 @@ class ProductTallyService {
   countMatchingProducts(products, searchTexts, label) {
     let count = 0;
 
-    console.log(`    Field: ${label}`);
-    console.log(`      Search: [${searchTexts.map(t => `'${t}'`).join(', ')}] (OR logic - case-insensitive substring)`);
+    // console.log(`    Field: ${label}`);
+    // console.log(`      Search: [${searchTexts.map(t => `'${t}'`).join(', ')}] (OR logic - case-insensitive substring)`);
 
     products.forEach(productName => {
       const productLower = productName.toLowerCase();
@@ -240,8 +240,8 @@ class ProductTallyService {
       }
     });
 
-    console.log(`      Matches: ${count} product item(s)`);
-    console.log(`      Count: ${count}`);
+    // console.log(`      Matches: ${count} product item(s)`);
+    // console.log(`      Count: ${count}`);
 
     return count;
   }

@@ -25,7 +25,8 @@ class OrderProcessingPipeline {
     this.gopeopleService = new GoPeopleApiService(
       gopeopleConfig.token_prod,
       gopeopleConfig.token_test,
-      gopeopleConfig.url,
+      gopeopleConfig.url_prod,
+      gopeopleConfig.url_test,
       requestParams.dev_mode
     );
     this.auspostService = new AuspostApiService(

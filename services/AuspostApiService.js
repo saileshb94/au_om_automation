@@ -87,9 +87,9 @@ class AuspostApiService {
       console.log(`  To: ${orderData.apiPayload.to.name}, ${orderData.apiPayload.to.suburb} ${orderData.apiPayload.to.state}`);
       console.log(`  Items: ${orderData.apiPayload.items.length} item(s)`);
 
-      console.log(`\n📋 === FULL REQUEST PAYLOAD (JSON) ===`);
-      console.log(JSON.stringify(requestPayload, null, 2));
-      console.log(`=== END FULL PAYLOAD ===\n`);
+      // console.log(`\n📋 === FULL REQUEST PAYLOAD (JSON) ===`);
+      // console.log(JSON.stringify(requestPayload, null, 2));
+      // console.log(`=== END FULL PAYLOAD ===\n`);
 
       console.log(`\n🌐 Making POST request to: ${credentials.url}`);
       console.log(`📋 === REQUEST PARAMETERS ===`);
@@ -117,7 +117,7 @@ class AuspostApiService {
 
       console.log(`\n✅ === AUSPOST API RESPONSE SUCCESS ===`);
       console.log(`Status Code: ${response.status}`);
-      console.log(`Response Data:`, JSON.stringify(response.data, null, 2));
+      // console.log(`Response Data:`, JSON.stringify(response.data, null, 2));
 
       // Check if response indicates success
       const isSuccess = response.status === 200 || response.status === 201;
