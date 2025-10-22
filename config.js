@@ -432,53 +432,103 @@ const GOPEOPLE_DELIVERY_DEFAULTS = {
 
 /**
  * Location-based warehouse/pickup addresses for Auspost API
- * Temporarily using same addresses as GoPeople (to be updated later)
+ * Separate address sets for LVLY (shop_id=10) and Bloomeroo (shop_id=6)
+ * Brand is selected based on order's shop_id in the auspost script
  */
 const AUSPOST_LOCATION_ADDRESSES = {
-  'Melbourne': {
-    name: "Lvly Melbourne",
-    lines: ["Or 15 Cochranes Road (from Entrance) "],
-    suburb: "MOORABBIN",
-    state: "VIC",
-    postcode: "3189",
-    phone: "0390710475",
-    email: "melbourne@lvly.com.au"
+  LVLY: {
+    'Melbourne': {
+      name: "Lvly Melbourne",
+      lines: ["15 COCHRANES RD"],
+      suburb: "MOORABBIN",
+      state: "VIC",
+      postcode: "3189",
+      phone: "0390710475",
+      email: "melbourne@lvly.com.au"
+    },
+    'Sydney': {
+      name: "Lvly Sydney",
+      lines: ["Unit 1, 22-28 Mandible St"],
+      suburb: "Alexandria",
+      state: "NSW",
+      postcode: "2015",
+      phone: "0390710475",
+      email: "sydney@lvly.com.au"
+    },
+    'Perth': {
+      name: "Lvly Perth",
+      lines: ["4, 35 Colin Jamieson Dr"],
+      suburb: "Welshpool",
+      state: "WA",
+      postcode: "6106",
+      phone: "0390712481",
+      email: "perth@lvly.com.au"
+    },
+    'Adelaide': {
+      name: "Lvly Adelaide",
+      lines: ["295 The Parade"],
+      suburb: "Beulah Park",
+      state: "SA",
+      postcode: "5067",
+      phone: "0390712481",
+      email: "adelaide@lvly.com.au"
+    },
+    'Brisbane': {
+      name: "Lvly Brisbane",
+      lines: ["2, 25 Unwin St"],
+      suburb: "Moorooka",
+      state: "QLD",
+      postcode: "4105",
+      phone: "0390710475",
+      email: "brisbane@lvly.com.au"
+    }
   },
-  'Sydney': {
-    name: "Lvly Sydney",
-    lines: ["Unit 1, 22-28 Mandible St"],
-    suburb: "Alexandria",
-    state: "NSW",
-    postcode: "2015",
-    phone: "0390710475",
-    email: "sydney@lvly.com.au"
-  },
-  'Perth': {
-    name: "Lvly Perth",
-    lines: ["4, 35 Colin Jamieson Dr"],
-    suburb: "Welshpool",
-    state: "WA",
-    postcode: "6106",
-    phone: "0390712481",
-    email: "perth@lvly.com.au"
-  },
-  'Adelaide': {
-    name: "Lvly Adelaide",
-    lines: ["295 The Parade"],
-    suburb: "Beulah Park",
-    state: "SA",
-    postcode: "5067",
-    phone: "0390712481",
-    email: "adelaide@lvly.com.au"
-  },
-  'Brisbane': {
-    name: "Lvly Brisbane",
-    lines: ["2, 25 Unwin St"],
-    suburb: "Moorooka",
-    state: "QLD",
-    postcode: "4105",
-    phone: "0390710475",
-    email: "brisbane@lvly.com.au"
+  BLOOMEROO: {
+    'Melbourne': {
+      name: "Bloomeroo Melbourne",
+      lines: ["15 COCHRANES RD"],  // TODO: Update with actual Bloomeroo addresses
+      suburb: "MOORABBIN",
+      state: "VIC",
+      postcode: "3189",
+      phone: "0390710475",
+      email: "melbourne@lvly.com.au"
+    },
+    'Sydney': {
+      name: "Bloomeroo Sydney",
+      lines: ["Unit 1, 22-28 Mandible St"],  // TODO: Update with actual Bloomeroo addresses
+      suburb: "Alexandria",
+      state: "NSW",
+      postcode: "2015",
+      phone: "0390710475",
+      email: "sydney@lvly.com.au"
+    },
+    'Perth': {
+      name: "Bloomeroo Perth",
+      lines: ["4, 35 Colin Jamieson Dr"],  // TODO: Update with actual Bloomeroo addresses
+      suburb: "Welshpool",
+      state: "WA",
+      postcode: "6106",
+      phone: "0390712481",
+      email: "perth@lvly.com.au"
+    },
+    'Adelaide': {
+      name: "Bloomeroo Adelaide",
+      lines: ["295 The Parade"],  // TODO: Update with actual Bloomeroo addresses
+      suburb: "Beulah Park",
+      state: "SA",
+      postcode: "5067",
+      phone: "0390712481",
+      email: "adelaide@lvly.com.au"
+    },
+    'Brisbane': {
+      name: "Bloomeroo Brisbane",
+      lines: ["2, 25 Unwin St"],  // TODO: Update with actual Bloomeroo addresses
+      suburb: "Moorooka",
+      state: "QLD",
+      postcode: "4105",
+      phone: "0390710475",
+      email: "brisbane@lvly.com.au"
+    }
   }
 };
 
@@ -489,49 +539,49 @@ const AUSPOST_LOCATION_ADDRESSES = {
  */
 const AUSPOST_CUTOFF_RULES = {
   'Melbourne': {
-    'Monday': { cutoffTime: '16:00', enabled: true },
-    'Tuesday': { cutoffTime: '16:00', enabled: true },
-    'Wednesday': { cutoffTime: '16:00', enabled: true },
-    'Thursday': { cutoffTime: '16:00', enabled: true },
-    'Friday': { cutoffTime: '16:00', enabled: true },
-    'Saturday': { cutoffTime: '13:00', enabled: true },
-    'Sunday': { cutoffTime: '13:00', enabled: true }
+    'Monday': { cutoffTime: '17:00', enabled: true },
+    'Tuesday': { cutoffTime: '17:00', enabled: true },
+    'Wednesday': { cutoffTime: '17:00', enabled: true },
+    'Thursday': { cutoffTime: '17:00', enabled: true },
+    'Friday': { cutoffTime: '17:00', enabled: true },
+    'Saturday': { cutoffTime: '17:00', enabled: true },
+    'Sunday': { cutoffTime: '17:00', enabled: true }
   },
   'Sydney': {
-    'Monday': { cutoffTime: '16:00', enabled: true },
-    'Tuesday': { cutoffTime: '16:00', enabled: true },
-    'Wednesday': { cutoffTime: '16:00', enabled: true },
-    'Thursday': { cutoffTime: '16:00', enabled: true },
-    'Friday': { cutoffTime: '16:00', enabled: true },
-    'Saturday': { cutoffTime: '13:00', enabled: true },
-    'Sunday': { cutoffTime: '13:00', enabled: true }
+    'Monday': { cutoffTime: '17:00', enabled: true },
+    'Tuesday': { cutoffTime: '17:00', enabled: true },
+    'Wednesday': { cutoffTime: '17:00', enabled: true },
+    'Thursday': { cutoffTime: '17:00', enabled: true },
+    'Friday': { cutoffTime: '17:00', enabled: true },
+    'Saturday': { cutoffTime: '17:00', enabled: true },
+    'Sunday': { cutoffTime: '17:00', enabled: true }
   },
   'Brisbane': {
-    'Monday': { cutoffTime: '16:00', enabled: true },
-    'Tuesday': { cutoffTime: '16:00', enabled: true },
-    'Wednesday': { cutoffTime: '16:00', enabled: true },
-    'Thursday': { cutoffTime: '16:00', enabled: true },
-    'Friday': { cutoffTime: '16:00', enabled: true },
-    'Saturday': { cutoffTime: '13:00', enabled: true },
-    'Sunday': { cutoffTime: '13:00', enabled: true }
+    'Monday': { cutoffTime: '17:00', enabled: true },
+    'Tuesday': { cutoffTime: '17:00', enabled: true },
+    'Wednesday': { cutoffTime: '17:00', enabled: true },
+    'Thursday': { cutoffTime: '17:00', enabled: true },
+    'Friday': { cutoffTime: '17:00', enabled: true },
+    'Saturday': { cutoffTime: '17:00', enabled: true },
+    'Sunday': { cutoffTime: '17:00', enabled: true }
   },
   'Adelaide': {
-    'Monday': { cutoffTime: '16:00', enabled: true },
-    'Tuesday': { cutoffTime: '16:00', enabled: true },
-    'Wednesday': { cutoffTime: '16:00', enabled: true },
-    'Thursday': { cutoffTime: '16:00', enabled: true },
-    'Friday': { cutoffTime: '16:00', enabled: true },
-    'Saturday': { cutoffTime: '13:00', enabled: true },
-    'Sunday': { cutoffTime: '13:00', enabled: true }
+    'Monday': { cutoffTime: '17:00', enabled: true },
+    'Tuesday': { cutoffTime: '17:00', enabled: true },
+    'Wednesday': { cutoffTime: '17:00', enabled: true },
+    'Thursday': { cutoffTime: '17:00', enabled: true },
+    'Friday': { cutoffTime: '17:00', enabled: true },
+    'Saturday': { cutoffTime: '17:00', enabled: true },
+    'Sunday': { cutoffTime: '17:00', enabled: true }
   },
   'Perth': {
-    'Monday': { cutoffTime: '16:00', enabled: true },
-    'Tuesday': { cutoffTime: '16:00', enabled: true },
-    'Wednesday': { cutoffTime: '16:00', enabled: true },
-    'Thursday': { cutoffTime: '16:00', enabled: true },
-    'Friday': { cutoffTime: '16:00', enabled: true },
-    'Saturday': { cutoffTime: '13:00', enabled: true },
-    'Sunday': { cutoffTime: '13:00', enabled: true }
+    'Monday': { cutoffTime: '17:00', enabled: true },
+    'Tuesday': { cutoffTime: '17:00', enabled: true },
+    'Wednesday': { cutoffTime: '17:00', enabled: true },
+    'Thursday': { cutoffTime: '17:00', enabled: true },
+    'Friday': { cutoffTime: '17:00', enabled: true },
+    'Saturday': { cutoffTime: '17:00', enabled: true },
+    'Sunday': { cutoffTime: '17:00', enabled: true }
   }
 };
 
@@ -554,9 +604,13 @@ const AUSPOST_SHIPMENT_DEFAULTS = {
  * AusPost Labels API Configuration
  * Configuration for generating labels from successful shipments
  * Uses the new AusPost Labels API endpoint with minimal payload
+ * Separate URLs for production and test based on dev_mode[0]
+ * - dev_mode[0] = '1' → Production (apiUrl_prod)
+ * - dev_mode[0] = '0' → Test (apiUrl_test)
  */
 const AUSPOST_LABELS_CONFIG = {
-  apiUrl: 'https://digitalapi.auspost.com.au/test/shipping/v1/labels',
+  apiUrl_prod: 'https://digitalapi.auspost.com.au/shipping/v1/labels',
+  apiUrl_test: 'https://digitalapi.auspost.com.au/test/shipping/v1/labels',
   wait_for_label_url: true,
   unlabelled_articles_only: false,
   preferences: [
@@ -581,13 +635,26 @@ const AUSPOST_LABELS_CONFIG = {
 /**
  * Auspost API Credentials Configuration
  * Separate credentials for LVLY (shop_id=10) and Bloomeroo (shop_id=6)
- * Account numbers are location-specific
- * Supports both production and test credentials based on dev_mode[0]
+ * URLs, account numbers, and authorization are all separated for prod/test
+ *
+ * Credential selection based on dev_mode[0]:
+ * - dev_mode[0] = '1' → Production (url_prod, accountNumbers_prod, authorization_prod)
+ * - dev_mode[0] = '0' → Test (url_test, accountNumbers_test, authorization_test)
+ *
+ * Note: dev_mode[0] only selects credentials. APIs always execute if orders are available.
  */
 const AUSPOST_CREDENTIALS = {
   LVLY: {
-    url: 'https://digitalapi.auspost.com.au/test/shipping/v1/shipments',
-    accountNumbers: {
+    url_prod: 'https://digitalapi.auspost.com.au/shipping/v1/shipments',
+    url_test: 'https://digitalapi.auspost.com.au/test/shipping/v1/shipments',
+    accountNumbers_prod: {
+      'Melbourne': '10150258',  // TODO: Replace with actual production account numbers
+      'Sydney': '10158358',
+      'Perth': '10169260',
+      'Adelaide': '10177847',
+      'Brisbane': '10166223'
+    },
+    accountNumbers_test: {
       'Melbourne': '01416548',
       'Sydney': '01416548',
       'Perth': '01416548',
@@ -598,8 +665,16 @@ const AUSPOST_CREDENTIALS = {
     authorization_test: process.env.AUSPOST_AUTHORIZATION_TEST
   },
   BLOOMEROO: {
-    url: 'https://digitalapi.auspost.com.au/test/shipping/v1/shipments',
-    accountNumbers: {
+    url_prod: 'https://digitalapi.auspost.com.au/shipping/v1/shipments',
+    url_test: 'https://digitalapi.auspost.com.au/test/shipping/v1/shipments',
+    accountNumbers_prod: {
+      'Melbourne': '10173537',  // TODO: Replace with actual production account numbers
+      'Sydney': '10173538',
+      'Perth': '10173540',
+      'Adelaide': '10177848',
+      'Brisbane': '10173539'
+    },
+    accountNumbers_test: {
       'Melbourne': '01416548',
       'Sydney': '01416548',
       'Perth': '01416548',

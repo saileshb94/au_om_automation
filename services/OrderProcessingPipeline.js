@@ -55,7 +55,8 @@ class OrderProcessingPipeline {
       console.log('='.repeat(80));
       console.log('Request parameters:', this.requestParams);
       
-      // Parse dev_mode flags (6-digit format: gopeople, personalized_api, gp_labels_api, product_tally, fos_update, google_sheets)
+      // Parse dev_mode flags (6-digit format: credential_mode, personalized_api, gp_labels_api, product_tally, fos_update, google_sheets)
+      // NOTE: dev_mode[0] is used for credential selection (0=test, 1=prod) - does NOT control execution
       console.log(`\n🔍 === DEV MODE PARSING DEBUG ===`);
       console.log(`Raw dev_mode parameter:`, this.requestParams.dev_mode);
       console.log(`Type of dev_mode:`, typeof this.requestParams.dev_mode);
@@ -68,7 +69,8 @@ class OrderProcessingPipeline {
         }
       }
 
-      const executeGoPeopleApiCalls_flag = this.requestParams.dev_mode[0] === '1';
+      // dev_mode[0] is for credential selection only (passed to API services)
+      const credentialMode = this.requestParams.dev_mode[0] === '1' ? 'PRODUCTION' : 'TEST';
       const executePersonalizedApiCalls_flag = this.requestParams.dev_mode[1] === '1';
       const executeGpLabelsApiCalls_flag = this.requestParams.dev_mode[2] === '1';
       const executeProductTallyApiCalls_flag = this.requestParams.dev_mode[3] === '1';
@@ -76,7 +78,7 @@ class OrderProcessingPipeline {
       const executeGoogleSheetsWrite_flag = this.requestParams.dev_mode[5] === '1';
 
       console.log(`\nFlag assignments:`);
-      console.log(`  dev_mode[0] = "${this.requestParams.dev_mode[0]}" → executeGoPeopleApiCalls_flag: ${executeGoPeopleApiCalls_flag}`);
+      console.log(`  dev_mode[0] = "${this.requestParams.dev_mode[0]}" → Credential Mode: ${credentialMode} (APIs always execute if orders available)`);
       console.log(`  dev_mode[1] = "${this.requestParams.dev_mode[1]}" → executePersonalizedApiCalls_flag: ${executePersonalizedApiCalls_flag}`);
       console.log(`  dev_mode[2] = "${this.requestParams.dev_mode[2]}" → executeGpLabelsApiCalls_flag: ${executeGpLabelsApiCalls_flag}`);
       console.log(`  dev_mode[3] = "${this.requestParams.dev_mode[3]}" → executeProductTallyApiCalls_flag: ${executeProductTallyApiCalls_flag}`);
@@ -84,7 +86,7 @@ class OrderProcessingPipeline {
       console.log(`  dev_mode[5] = "${this.requestParams.dev_mode[5]}" → executeGoogleSheetsWrite_flag: ${executeGoogleSheetsWrite_flag}`);
       console.log(`=== END DEV MODE PARSING DEBUG ===\n`);
 
-      console.log(`Dev mode flags - GoPeople API: ${executeGoPeopleApiCalls_flag}, Personalized API: ${executePersonalizedApiCalls_flag}, GP Labels API: ${executeGpLabelsApiCalls_flag}, Product Tally: ${executeProductTallyApiCalls_flag}, FOS Update: ${executeFosUpdate_flag}, Google Sheets: ${executeGoogleSheetsWrite_flag}`);
+      console.log(`Dev mode - Credentials: ${credentialMode}, Personalized API: ${executePersonalizedApiCalls_flag}, GP Labels API: ${executeGpLabelsApiCalls_flag}, Product Tally: ${executeProductTallyApiCalls_flag}, FOS Update: ${executeFosUpdate_flag}, Google Sheets: ${executeGoogleSheetsWrite_flag}`);
       
       // Format delivery date for batch management
       const deliveryDate = DateHelper.formatDate(this.requestParams.date);
@@ -159,11 +161,11 @@ class OrderProcessingPipeline {
       let logisticsResults = null;
 
       if (this.requestParams.is_same_day === '1') {
-        console.log(`✅ Routing to GoPeople`);
+        console.log(`✅ Routing to GoPeople (Credentials: ${credentialMode})`);
         console.log(`=== END LOGISTICS ROUTING ===\n`);
 
         const { gopeopleResults, newSuccessCount, newFailureCount } = await this.executeGoPeopleStep(
-          ordersResult, executeGoPeopleApiCalls_flag, scriptExecutor, results, executionDetails, orderTrackingArray
+          ordersResult, scriptExecutor, results, executionDetails, orderTrackingArray
         );
         logisticsResults = gopeopleResults;
         successCount += newSuccessCount;
@@ -172,11 +174,11 @@ class OrderProcessingPipeline {
         // Step 2.5: Update batch numbers based on successful gopeople orders
         finalBatchNumbers = await this.updateBatchNumbersAfterLogistics(orderTrackingArray, deliveryDate, currentBatchNumbers, 'gopeople', this.requestParams.is_same_day);
       } else {
-        console.log(`✅ Routing to Auspost`);
+        console.log(`✅ Routing to Auspost (Credentials: ${credentialMode})`);
         console.log(`=== END LOGISTICS ROUTING ===\n`);
 
         const { auspostResults, newSuccessCount, newFailureCount } = await this.executeAuspostStep(
-          ordersResult, executeGoPeopleApiCalls_flag, scriptExecutor, results, executionDetails, orderTrackingArray
+          ordersResult, scriptExecutor, results, executionDetails, orderTrackingArray
         );
         logisticsResults = auspostResults;
         successCount += newSuccessCount;
@@ -301,7 +303,7 @@ class OrderProcessingPipeline {
     }
   }
 
-  async executeGoPeopleStep(ordersResult, executeGoPeopleApiCalls_flag, scriptExecutor, results, executionDetails, orderTrackingArray) {
+  async executeGoPeopleStep(ordersResult, scriptExecutor, results, executionDetails, orderTrackingArray) {
     let gopeopleApiResults = null;
     let successCount = 0;
     let failureCount = 0;
@@ -311,80 +313,71 @@ class OrderProcessingPipeline {
       const orderNumbers = ordersResult.data.map(orderData => orderData.order_number);
       console.log(`Orders script returned ${orderIds.length} order IDs and ${orderNumbers.length} order numbers.`);
 
-      console.log(`\n🚀 === GOPEOPLE API EXECUTION DECISION ===`);
-      console.log(`📊 executeGoPeopleApiCalls_flag: ${executeGoPeopleApiCalls_flag} (dev_mode[0] = '${this.requestParams.dev_mode[0]}')`);
+      console.log(`\n🚀 === GOPEOPLE API EXECUTION ===`);
       console.log(`📋 Orders available for processing: ${orderIds.length}`);
+      console.log(`✅ Executing GoPeople API calls`);
+      console.log(`=== END GOPEOPLE API EXECUTION HEADER ===\n`);
 
-      if (executeGoPeopleApiCalls_flag) {
-        console.log(`✅ Decision: EXECUTING GoPeople API calls`);
-        console.log(`=== END GOPEOPLE API DECISION ===\n`);
+      const extendedParams = { ...this.requestParams, orderIds: orderIds, orderNumbers: orderNumbers };
 
-        const extendedParams = { ...this.requestParams, orderIds: orderIds, orderNumbers: orderNumbers };
+      console.log('Executing gopeople script...');
+      const gopeopleResult = await scriptExecutor.executeScript('gopeople', this.SCRIPTS_CONFIG.gopeople, extendedParams);
 
-        console.log('Executing gopeople script...');
-        const gopeopleResult = await scriptExecutor.executeScript('gopeople', this.SCRIPTS_CONFIG.gopeople, extendedParams);
-        
-        if (gopeopleResult.success) {
-          if (gopeopleResult.data && gopeopleResult.data.length > 0) {
-            console.log(`Making GoPeople API calls for ${gopeopleResult.data.length} orders...`);
-            gopeopleApiResults = await this.gopeopleService.executeGoPeopleApiCalls(gopeopleResult.data);
-            
-            gopeopleApiResults.summary.skipped = gopeopleResult.skippedCount;
-            gopeopleApiResults.summary.totalOrders = gopeopleResult.recordCount;
-            
-            results['gopeople'] = gopeopleApiResults;
+      if (gopeopleResult.success) {
+        if (gopeopleResult.data && gopeopleResult.data.length > 0) {
+          console.log(`Making GoPeople API calls for ${gopeopleResult.data.length} orders...`);
+          gopeopleApiResults = await this.gopeopleService.executeGoPeopleApiCalls(gopeopleResult.data);
 
-            // Create a map of order numbers to pickUpDate from transformed data
-            const pickupDateMap = {};
-            gopeopleResult.data.forEach(transformedOrder => {
-              pickupDateMap[transformedOrder.orderNumber] = transformedOrder.apiPayload.pickUpDate;
-            });
+          gopeopleApiResults.summary.skipped = gopeopleResult.skippedCount;
+          gopeopleApiResults.summary.totalOrders = gopeopleResult.recordCount;
 
-            // Update tracking array with gopeople results and pickUpDate
-            gopeopleApiResults.results.forEach(apiResult => {
-              const trackingEntry = orderTrackingArray.find(entry => entry.order_number === apiResult.orderNumber);
-              if (trackingEntry) {
-                trackingEntry.gopeople_status = apiResult.success;
-                trackingEntry.gopeople_error = apiResult.success ? null : apiResult.error;
-                trackingEntry.gp_pickupdate = pickupDateMap[apiResult.orderNumber] || null;
-              }
-            });
-            
-            const { data: gopeopleData, processedOrderNumbers: gopeopleProcessedOrderNumbers, scriptKey: gopeopleScriptKey, ...gopeopleExecutionInfo } = gopeopleResult;
-            executionDetails['gopeople'] = {
-              ...gopeopleExecutionInfo,
-              apiCallsSummary: gopeopleApiResults.summary,
-              devModeSkipped: false
-            };
-            
-            successCount++;
-          } else if (gopeopleResult.skippedCount > 0) {
-            // Handle all orders skipped due to cutoff
-            this.handleAllOrdersSkipped(gopeopleResult, results, executionDetails, orderTrackingArray);
-            successCount++;
-          } else {
-            this.handleGoPeopleFailure(gopeopleResult, results, executionDetails, orderTrackingArray, 'No data returned');
-            failureCount++;
-          }
+          results['gopeople'] = gopeopleApiResults;
+
+          // Create a map of order numbers to pickUpDate from transformed data
+          const pickupDateMap = {};
+          gopeopleResult.data.forEach(transformedOrder => {
+            pickupDateMap[transformedOrder.orderNumber] = transformedOrder.apiPayload.pickUpDate;
+          });
+
+          // Update tracking array with gopeople results and pickUpDate
+          gopeopleApiResults.results.forEach(apiResult => {
+            const trackingEntry = orderTrackingArray.find(entry => entry.order_number === apiResult.orderNumber);
+            if (trackingEntry) {
+              trackingEntry.gopeople_status = apiResult.success;
+              trackingEntry.gopeople_error = apiResult.success ? null : apiResult.error;
+              trackingEntry.gp_pickupdate = pickupDateMap[apiResult.orderNumber] || null;
+            }
+          });
+
+          const { data: gopeopleData, processedOrderNumbers: gopeopleProcessedOrderNumbers, scriptKey: gopeopleScriptKey, ...gopeopleExecutionInfo } = gopeopleResult;
+          executionDetails['gopeople'] = {
+            ...gopeopleExecutionInfo,
+            apiCallsSummary: gopeopleApiResults.summary,
+            devModeSkipped: false
+          };
+
+          successCount++;
+        } else if (gopeopleResult.skippedCount > 0) {
+          // Handle all orders skipped due to cutoff
+          this.handleAllOrdersSkipped(gopeopleResult, results, executionDetails, orderTrackingArray);
+          successCount++;
         } else {
-          this.handleGoPeopleFailure(gopeopleResult, results, executionDetails, orderTrackingArray, 'GoPeople script failed');
+          this.handleGoPeopleFailure(gopeopleResult, results, executionDetails, orderTrackingArray, 'No data returned');
           failureCount++;
         }
       } else {
-        console.log(`❌ Decision: SKIPPING GoPeople API calls (dev_mode flag disabled)`);
-        console.log(`=== END GOPEOPLE API DECISION ===\n`);
-        this.handleGoPeopleSkipped(results, executionDetails, orderTrackingArray, 'Skipped due to dev_mode flag');
+        this.handleGoPeopleFailure(gopeopleResult, results, executionDetails, orderTrackingArray, 'GoPeople script failed');
         failureCount++;
       }
     } else {
       this.handleGoPeopleSkipped(results, executionDetails, orderTrackingArray, 'No orders found to process');
       failureCount++;
     }
-    
+
     return { gopeopleResults: gopeopleApiResults, newSuccessCount: successCount, newFailureCount: failureCount };
   }
 
-  async executeAuspostStep(ordersResult, executeAuspostApiCalls_flag, scriptExecutor, results, executionDetails, orderTrackingArray) {
+  async executeAuspostStep(ordersResult, scriptExecutor, results, executionDetails, orderTrackingArray) {
     let auspostApiResults = null;
     let successCount = 0;
     let failureCount = 0;
@@ -394,62 +387,53 @@ class OrderProcessingPipeline {
       const orderNumbers = ordersResult.data.map(orderData => orderData.order_number);
       console.log(`Orders script returned ${orderIds.length} order IDs and ${orderNumbers.length} order numbers for Auspost.`);
 
-      console.log(`\n📮 === AUSPOST API EXECUTION DECISION ===`);
-      console.log(`📊 executeAuspostApiCalls_flag: ${executeAuspostApiCalls_flag} (dev_mode[0] = '${this.requestParams.dev_mode[0]}')`);
+      console.log(`\n📮 === AUSPOST API EXECUTION ===`);
       console.log(`📋 Orders available for processing: ${orderIds.length}`);
+      console.log(`✅ Executing Auspost API calls`);
+      console.log(`=== END AUSPOST API EXECUTION HEADER ===\n`);
 
-      if (executeAuspostApiCalls_flag) {
-        console.log(`✅ Decision: EXECUTING Auspost API calls`);
-        console.log(`=== END AUSPOST API DECISION ===\n`);
+      const extendedParams = { ...this.requestParams, orderIds: orderIds, orderNumbers: orderNumbers };
 
-        const extendedParams = { ...this.requestParams, orderIds: orderIds, orderNumbers: orderNumbers };
+      console.log('Executing auspost script...');
+      const auspostResult = await scriptExecutor.executeScript('auspost', this.SCRIPTS_CONFIG.auspost, extendedParams);
 
-        console.log('Executing auspost script...');
-        const auspostResult = await scriptExecutor.executeScript('auspost', this.SCRIPTS_CONFIG.auspost, extendedParams);
+      if (auspostResult.success) {
+        if (auspostResult.data && auspostResult.data.length > 0) {
+          console.log(`Making Auspost API calls for ${auspostResult.data.length} orders...`);
+          auspostApiResults = await this.auspostService.executeAuspostApiCalls(auspostResult.data);
 
-        if (auspostResult.success) {
-          if (auspostResult.data && auspostResult.data.length > 0) {
-            console.log(`Making Auspost API calls for ${auspostResult.data.length} orders...`);
-            auspostApiResults = await this.auspostService.executeAuspostApiCalls(auspostResult.data);
+          auspostApiResults.summary.skipped = auspostResult.skippedCount;
+          auspostApiResults.summary.totalOrders = auspostResult.recordCount;
 
-            auspostApiResults.summary.skipped = auspostResult.skippedCount;
-            auspostApiResults.summary.totalOrders = auspostResult.recordCount;
+          results['auspost'] = auspostApiResults;
 
-            results['auspost'] = auspostApiResults;
+          // Update tracking array with auspost results
+          auspostApiResults.results.forEach(apiResult => {
+            const trackingEntry = orderTrackingArray.find(entry => entry.order_number === apiResult.orderNumber);
+            if (trackingEntry) {
+              trackingEntry.auspost_status = apiResult.success;
+              trackingEntry.auspost_error = apiResult.success ? null : apiResult.error;
+            }
+          });
 
-            // Update tracking array with auspost results
-            auspostApiResults.results.forEach(apiResult => {
-              const trackingEntry = orderTrackingArray.find(entry => entry.order_number === apiResult.orderNumber);
-              if (trackingEntry) {
-                trackingEntry.auspost_status = apiResult.success;
-                trackingEntry.auspost_error = apiResult.success ? null : apiResult.error;
-              }
-            });
+          const { data: auspostData, processedOrderNumbers: auspostProcessedOrderNumbers, scriptKey: auspostScriptKey, ...auspostExecutionInfo } = auspostResult;
+          executionDetails['auspost'] = {
+            ...auspostExecutionInfo,
+            apiCallsSummary: auspostApiResults.summary,
+            devModeSkipped: false
+          };
 
-            const { data: auspostData, processedOrderNumbers: auspostProcessedOrderNumbers, scriptKey: auspostScriptKey, ...auspostExecutionInfo } = auspostResult;
-            executionDetails['auspost'] = {
-              ...auspostExecutionInfo,
-              apiCallsSummary: auspostApiResults.summary,
-              devModeSkipped: false
-            };
-
-            successCount++;
-          } else if (auspostResult.skippedCount > 0) {
-            // Handle all orders skipped due to cutoff
-            this.handleAllOrdersSkippedAuspost(auspostResult, results, executionDetails, orderTrackingArray);
-            successCount++;
-          } else {
-            this.handleAuspostFailure(auspostResult, results, executionDetails, orderTrackingArray, 'No data returned');
-            failureCount++;
-          }
+          successCount++;
+        } else if (auspostResult.skippedCount > 0) {
+          // Handle all orders skipped due to cutoff
+          this.handleAllOrdersSkippedAuspost(auspostResult, results, executionDetails, orderTrackingArray);
+          successCount++;
         } else {
-          this.handleAuspostFailure(auspostResult, results, executionDetails, orderTrackingArray, 'Auspost script failed');
+          this.handleAuspostFailure(auspostResult, results, executionDetails, orderTrackingArray, 'No data returned');
           failureCount++;
         }
       } else {
-        console.log(`❌ Decision: SKIPPING Auspost API calls (dev_mode flag disabled)`);
-        console.log(`=== END AUSPOST API DECISION ===\n`);
-        this.handleAuspostSkipped(results, executionDetails, orderTrackingArray, 'Skipped due to dev_mode flag');
+        this.handleAuspostFailure(auspostResult, results, executionDetails, orderTrackingArray, 'Auspost script failed');
         failureCount++;
       }
     } else {

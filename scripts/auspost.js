@@ -155,10 +155,18 @@ function transform(rawData, deliveryDate) {
 
   for (const row of rawData) {
     console.log(`\n--- Processing order: ${row.order_number} ---`);
+    console.log(`Shop ID: ${row.shop_id}`);
     console.log(`Location: ${row.location_name}`);
 
-    // Get the addressFrom based on location
-    const addressFrom = AUSPOST_LOCATION_ADDRESSES[row.location_name] || AUSPOST_LOCATION_ADDRESSES['Melbourne'];
+    // Determine brand based on shop_id (10 = LVLY, 6 = Bloomeroo)
+    const brand = row.shop_id === 10 ? 'LVLY' : 'BLOOMEROO';
+    console.log(`Brand: ${brand}`);
+
+    // Get the addressFrom based on brand and location with fallback logic
+    const addressFrom = AUSPOST_LOCATION_ADDRESSES[brand]?.[row.location_name]
+      || AUSPOST_LOCATION_ADDRESSES[brand]?.['Melbourne']
+      || AUSPOST_LOCATION_ADDRESSES.LVLY['Melbourne'];  // Final fallback
+
     console.log(`From address: ${addressFrom.suburb}, ${addressFrom.state}`);
 
     // Check cutoff time for this order
@@ -248,6 +256,8 @@ function transform(rawData, deliveryDate) {
 
     transformedOrders.push({
       orderNumber: row.order_number,
+      shop_id: row.shop_id,
+      store: row.shop_id === 10 ? 'LVLY' : row.shop_id === 6 ? 'BL' : '',
       location_name: row.location_name,
       delivery_date: deliveryDate || row.delivery_date,
       apiPayload: shipmentObject

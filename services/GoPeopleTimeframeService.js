@@ -7,9 +7,10 @@ class GoPeopleTimeframeService {
     this.GOPEOPLE_TIMEFRAME_API_URL = timeframeApiUrl;
     this.devMode = devMode;
 
-    // Select token based on dev_mode[0]
+    // dev_mode[0] selects credentials (does NOT control API execution)
     // dev_mode[0] = '1' → Production credentials
     // dev_mode[0] = '0' → Test credentials
+    // APIs always execute; dev_mode[0] only determines which environment to use
     const useProduction = devMode && devMode[0] === '1';
     this.GOPEOPLE_API_TOKEN = useProduction ? this.GOPEOPLE_API_TOKEN_PROD : this.GOPEOPLE_API_TOKEN_TEST;
 

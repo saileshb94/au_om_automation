@@ -5,23 +5,27 @@ class AuspostApiService {
   constructor(lvlyConfig, bloomerooConfig, devMode) {
     this.devMode = devMode;
 
-    // Determine if using production credentials based on dev_mode[0]
-    // dev_mode[0] = '1' → Production credentials
-    // dev_mode[0] = '0' → Test credentials
+    // dev_mode[0] selects credentials (does NOT control API execution)
+    // dev_mode[0] = '1' → Production credentials (url_prod, accountNumbers_prod, authorization_prod)
+    // dev_mode[0] = '0' → Test credentials (url_test, accountNumbers_test, authorization_test)
+    // APIs always execute if orders are available; dev_mode[0] only determines which environment to use
     const useProduction = devMode && devMode[0] === '1';
 
-    // Store both credential sets with appropriate authorization based on dev_mode
+    // Store credential sets with URL, account numbers, and authorization selected based on dev_mode
     this.LVLY_CONFIG = {
-      url: lvlyConfig.url,
-      accountNumbers: lvlyConfig.accountNumbers,
+      url: useProduction ? lvlyConfig.url_prod : lvlyConfig.url_test,
+      accountNumbers: useProduction ? lvlyConfig.accountNumbers_prod : lvlyConfig.accountNumbers_test,
       authorization: useProduction ? lvlyConfig.authorization_prod : lvlyConfig.authorization_test
     };
 
     this.BLOOMEROO_CONFIG = {
-      url: bloomerooConfig.url,
-      accountNumbers: bloomerooConfig.accountNumbers,
+      url: useProduction ? bloomerooConfig.url_prod : bloomerooConfig.url_test,
+      accountNumbers: useProduction ? bloomerooConfig.accountNumbers_prod : bloomerooConfig.accountNumbers_test,
       authorization: useProduction ? bloomerooConfig.authorization_prod : bloomerooConfig.authorization_test
     };
+
+    // Select labels API URL based on dev_mode[0]
+    this.LABELS_API_URL = useProduction ? AUSPOST_LABELS_CONFIG.apiUrl_prod : AUSPOST_LABELS_CONFIG.apiUrl_test;
 
     console.log(`\n🚀 === AUSPOST API SERVICE INITIALIZED ===`);
     console.log(`dev_mode: ${devMode}`);
@@ -35,6 +39,8 @@ class AuspostApiService {
     console.log(`  API URL: ${this.BLOOMEROO_CONFIG.url}`);
     console.log(`  Account Numbers configured for locations: ${Object.keys(this.BLOOMEROO_CONFIG.accountNumbers).join(', ')}`);
     console.log(`  Authorization configured: ${this.BLOOMEROO_CONFIG.authorization ? 'YES' : 'NO'}`);
+    console.log(`\nLabels API:`);
+    console.log(`  URL: ${this.LABELS_API_URL}`);
     console.log(`=== END INITIALIZATION ===\n`);
   }
 
@@ -57,6 +63,8 @@ class AuspostApiService {
   }
 
   async callAuspostAPI(orderData) {
+    console.log(`\n📋 orDerData ===`);
+    console.log(orderData);
     try {
       console.log(`\n📮 === CALLING AUSPOST API ===`);
       console.log(`Order Number: ${orderData.orderNumber}`);
@@ -79,9 +87,9 @@ class AuspostApiService {
       console.log(`  To: ${orderData.apiPayload.to.name}, ${orderData.apiPayload.to.suburb} ${orderData.apiPayload.to.state}`);
       console.log(`  Items: ${orderData.apiPayload.items.length} item(s)`);
 
-      // console.log(`\n📋 === FULL REQUEST PAYLOAD (JSON) ===`);
-      // console.log(JSON.stringify(requestPayload, null, 2));
-      // console.log(`=== END FULL PAYLOAD ===\n`);
+      console.log(`\n📋 === FULL REQUEST PAYLOAD (JSON) ===`);
+      console.log(JSON.stringify(requestPayload, null, 2));
+      console.log(`=== END FULL PAYLOAD ===\n`);
 
       console.log(`\n🌐 Making POST request to: ${credentials.url}`);
       console.log(`📋 === REQUEST PARAMETERS ===`);
@@ -478,14 +486,14 @@ class AuspostApiService {
     };
 
     console.log(`\n📦 Request Payload:`);
-    console.log(`  URL: ${AUSPOST_LABELS_CONFIG.apiUrl}`);
+    console.log(`  URL: ${this.LABELS_API_URL}`);
     console.log(`  Shipments count: ${payload.shipments.length}`);
     console.log(`  Wait for label URL: ${payload.wait_for_label_url}`);
     // console.log(`\n📋 Full Payload:`, JSON.stringify(payload, null, 2));
 
     try {
       const response = await axios.post(
-        AUSPOST_LABELS_CONFIG.apiUrl,
+        this.LABELS_API_URL,
         payload,
         {
           headers: {
