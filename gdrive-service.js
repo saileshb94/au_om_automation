@@ -38,15 +38,21 @@ class GoogleDriveService {
     async findOrCreateFolder(parentId, folderName, retryCount = 0) {
         try {
             // Search for existing folder with Shared Drive support
+            const searchQuery = `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+            console.log(`Searching for folder: "${folderName}" in parent: ${parentId}`);
+            console.log(`Search query: ${searchQuery}`);
+
             const searchResponse = await this.drive.files.list({
-                q: `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder'`,
+                q: searchQuery,
                 fields: 'files(id, name)',
                 supportsAllDrives: true,
                 includeItemsFromAllDrives: true
             });
 
+            console.log(`Search returned ${searchResponse.data.files.length} result(s)`);
+
             if (searchResponse.data.files.length > 0) {
-                console.log(`Found existing folder: ${folderName}`);
+                console.log(`Found existing folder: ${folderName} (ID: ${searchResponse.data.files[0].id})`);
                 return searchResponse.data.files[0].id;
             }
 
