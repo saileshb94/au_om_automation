@@ -1460,6 +1460,68 @@ const PRODUCT_TALLY_RULES = {
           searchTexts: ['head over heels','love reflex','promise you']
         }
       ]
+    },
+    {
+      name: 'table_9',
+      rows: [
+        {
+          type: 'simple',
+          label: 'blue_hydrangea',
+          searchTexts: ['blue hydrangea']
+        },
+        {
+          type: 'simple',
+          label: 'green_hydrangea',
+          searchTexts: ['green hydrangea']
+        }
+      ]
+    },
+    {
+      name: 'table_10',
+      rows: [
+        {
+          type: 'complex',
+          label: 'auburn_glow',
+          fields: [
+            {
+              fieldName: 'medium',
+              searchTexts: ['medium - auburn glow']
+            },
+            {
+              fieldName: 'large',
+              searchTexts: ['large - auburn glow']
+            }
+          ]
+        },
+        {
+          type: 'complex',
+          label: 'dream_girl',
+          fields: [
+            {
+              fieldName: 'medium',
+              searchTexts: ['medium - dream girl']
+            },
+            {
+              fieldName: 'large',
+              searchTexts: ['large - dream girl']
+            }
+          ]
+        },
+        {
+          type: 'complex',
+          label: 'sorbet',
+          fields: [
+            {
+              fieldName: 'medium',
+              searchTexts: ['medium - sorbet']
+            },
+            {
+              fieldName: 'large',
+              searchTexts: ['large - sorbet']
+            }
+          ]
+        }
+      ]
     }
   ]
   
