@@ -200,7 +200,7 @@ function transformMessageCards(rawData, validLocations, finalBatchNumbers) {
                     order_number: row.order_number,
                     from: row.from_sender || null,
                     note: row.note || null,
-                    to: row.to_recipient || null
+                    to: row.recipient_name || null
                 };
 
                 locationGroups[row.location_name].push(messageCard);

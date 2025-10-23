@@ -58,9 +58,40 @@ class GoPeopleTimeframeService {
       console.log(`Response Data:`, JSON.stringify(response.data, null, 2));
       console.log(`=== END GOPEOPLE TIMEFRAME API RESPONSE ===\n`);
 
+      // Deduplicate results by title + dateTime combination
+      let deduplicatedData = response.data;
+      if (response.data.result && Array.isArray(response.data.result)) {
+        const seen = new Set();
+        const uniqueResults = response.data.result.filter(item => {
+          const key = `${item.title}|${item.dateTime}`;
+          if (seen.has(key)) {
+            return false;
+          }
+          seen.add(key);
+          return true;
+        });
+
+        const originalCount = response.data.result.length;
+        const uniqueCount = uniqueResults.length;
+        const duplicatesRemoved = originalCount - uniqueCount;
+
+        deduplicatedData = {
+          ...response.data,
+          result: uniqueResults
+        };
+
+        if (duplicatesRemoved > 0) {
+          console.log(`\n🔧 === DEDUPLICATION SUMMARY ===`);
+          console.log(`Original entries: ${originalCount}`);
+          console.log(`Unique entries: ${uniqueCount}`);
+          console.log(`Duplicates removed: ${duplicatesRemoved}`);
+          console.log(`=== END DEDUPLICATION SUMMARY ===\n`);
+        }
+      }
+
       return {
         success: true,
-        data: response.data
+        data: deduplicatedData
       };
     } catch (error) {
       console.log(`\n❌ === GOPEOPLE TIMEFRAME API ERROR ===`);
