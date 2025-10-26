@@ -19,19 +19,18 @@ SELECT
             'properties',sop.properties,
             'ingredients', (
                 SELECT JSON_ARRAYAGG(
-                    CASE
-                        WHEN sp.is_bundle = 1 AND cb.bundle_product_id IS NULL THEN 
-                            JSON_OBJECT('name', cbi.ingredient_name)
-                        WHEN sp.is_bundle = 1 AND cb.bundle_product_id IS NOT NULL THEN
-                            JSON_OBJECT(
-                                'ing_qty', TRIM(TRAILING '0' FROM TRIM(TRAILING '.' FROM CAST(cb.qty AS CHAR))),
-                                'ing_title', (
-                                    SELECT sp2.title
-                                    FROM shopify_products sp2
-                                    WHERE sp2.id = cb.bundle_product_id
-                                )
-                            )
-                    END
+                    JSON_OBJECT(
+					'qty', TRIM(TRAILING '0' FROM TRIM(TRAILING '.' FROM CAST(cb.qty AS CHAR))),
+					'title', CASE 
+						WHEN cb.bundle_product_id IS NULL OR cb.bundle_product_id = 0 
+							THEN cbi.ingredient_name
+							ELSE (
+								SELECT sp2.title
+								FROM shopify_products sp2
+								WHERE sp2.id = cb.bundle_product_id
+							)
+					END
+					)
                 )
                 FROM cookbook cb
                 LEFT JOIN cookbook_ingredient cbi ON cbi.ingredient_id = cb.ingredient_id
