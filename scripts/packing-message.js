@@ -213,25 +213,22 @@ function transformMessageCards(rawData, validLocations, finalBatchNumbers) {
     // Group message cards by location
     rawData.forEach((row, index) => {
         if (row.location_name && validLocations.includes(row.location_name)) {
-            // Only include orders that have a note/message
-            if (row.note && row.note.trim() !== '') {
-                const messageCard = {
-                    order_number: row.order_number,
-                    from: row.from_sender || null,
-                    note: row.note || null,
-                    to: row.recipient_name || null
-                };
+            const messageCard = {
+                order_number: row.order_number,
+                from: row.from_sender || null,
+                note: row.note || null,
+                to: row.recipient_name || null
+            };
 
-                locationGroups[row.location_name].push(messageCard);
+            locationGroups[row.location_name].push(messageCard);
 
-                // Add to processed orders
-                if (row.order_number) {
-                    processedOrderNumbers.push(row.order_number);
-                }
+            // Add to processed orders
+            if (row.order_number) {
+                processedOrderNumbers.push(row.order_number);
+            }
 
-                if (index < 3) {
-                    console.log(`Sample message card ${index}: location=${row.location_name}, order=${row.order_number}, note="${row.note ? row.note.substring(0, 30) : 'null'}..."`);
-                }
+            if (index < 3) {
+                console.log(`Sample message card ${index}: location=${row.location_name}, order=${row.order_number}, note="${row.note ? row.note.substring(0, 30) : 'null'}..."`);
             }
         }
     });

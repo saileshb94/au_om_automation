@@ -71,7 +71,7 @@ class ProductTallyService {
         };
 
         console.log(`\nCalculated tallies for ${location}:`);
-        console.log(JSON.stringify(tablesData, null, 2));
+        // console.log(JSON.stringify(tablesData, null, 2));
 
         // Make API call if enabled
         if (executeApiCall) {

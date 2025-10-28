@@ -181,7 +181,10 @@ function transform(rawData, deliveryDate, manualTimeframe = null) {
 
     // Determine isCommercial based on residence_type
     const isCommercial = row.residence_type !== 'House/Unit/Apartment';
-    
+
+    // Determine prefix based on shop_id
+    const refPrefix = row.shop_id === 6 ? 'BL' : row.shop_id === 10 ? 'LV' : 'LV';
+
     transformedOrders.push({
       orderNumber: row.order_number, // Keep this for tracking
       location_name: row.location_name, // Add location for GP Labels processing
@@ -208,7 +211,7 @@ function transform(rawData, deliveryDate, manualTimeframe = null) {
         pickUpDate: pickUpDate,
         description: GOPEOPLE_DELIVERY_DEFAULTS.description,
         note: row.delivery_instructions || '',
-        ref: `${GOPEOPLE_DELIVERY_DEFAULTS.refPrefix}${row.order_number}`,
+        ref: `${refPrefix}${row.order_number}`,
         ref2: GOPEOPLE_DELIVERY_DEFAULTS.ref2,
         atl: GOPEOPLE_DELIVERY_DEFAULTS.atl,
         idCheckRequired: GOPEOPLE_DELIVERY_DEFAULTS.idCheckRequired,
