@@ -598,6 +598,7 @@ class AuspostApiService {
             location: location,
             delivery_date: deliveryDate,
             batch: batch,
+            isSameDay: "next-day",
             label_url: labelUrl,
             items_count: items.length,
             orders: items.map(i => i.orderNumber),

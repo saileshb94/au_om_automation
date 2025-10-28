@@ -619,7 +619,8 @@ class OrderProcessingPipeline {
           const folderPreCreationResults = await gdriveService.preCreateFolderStructure(
             successfulLogisticsOrders,
             deliveryDate,
-            finalBatchNumbers
+            finalBatchNumbers,
+            this.requestParams.is_same_day
           );
           
           console.log('Folder pre-creation completed:', folderPreCreationResults.summary);
@@ -723,6 +724,8 @@ class OrderProcessingPipeline {
   }
 
   addBatchInfoToData(data, finalBatchNumbers, deliveryDate) {
+    const deliveryType = this.requestParams.is_same_day === '1' ? 'same-day' : 'next-day';
+
     if (Array.isArray(data)) {
       return data.map(locationEntry => {
         if (typeof locationEntry === 'string') {
@@ -734,6 +737,8 @@ class OrderProcessingPipeline {
           if (deliveryDate) {
             parsed.delivery_date = deliveryDate;
           }
+          // Add isSameDay field
+          parsed.isSameDay = deliveryType;
           return JSON.stringify(parsed);
         } else if (typeof locationEntry === 'object' && locationEntry.location) {
           if (finalBatchNumbers[locationEntry.location] !== undefined) {
@@ -743,6 +748,8 @@ class OrderProcessingPipeline {
           if (deliveryDate) {
             locationEntry.delivery_date = deliveryDate;
           }
+          // Add isSameDay field
+          locationEntry.isSameDay = deliveryType;
           return JSON.stringify(locationEntry);
         }
         return JSON.stringify(locationEntry);
@@ -752,6 +759,8 @@ class OrderProcessingPipeline {
   }
 
   addBatchInfoToPackingData(data, finalBatchNumbers, deliveryDate) {
+    const deliveryType = this.requestParams.is_same_day === '1' ? 'same-day' : 'next-day';
+
     if (Array.isArray(data)) {
       return data.map(locationEntry => {
         if (typeof locationEntry === 'object' && locationEntry.location) {
@@ -763,6 +772,8 @@ class OrderProcessingPipeline {
           if (deliveryDate) {
             locationEntry.delivery_date = deliveryDate;
           }
+          // Add isSameDay field
+          locationEntry.isSameDay = deliveryType;
         }
         return locationEntry;
       });
@@ -840,9 +851,10 @@ class OrderProcessingPipeline {
           const gdriveService = new GoogleDriveService();
           
           const polaroidProcessingResults = await gdriveService.processPolaroidImages(
-            polaroidData, 
-            deliveryDate, 
-            finalBatchNumbers
+            polaroidData,
+            deliveryDate,
+            finalBatchNumbers,
+            this.requestParams.is_same_day
           );
           
           console.log('Polaroid processing completed:', polaroidProcessingResults.summary);
@@ -1148,7 +1160,8 @@ class OrderProcessingPipeline {
         successfulLogisticsOrders,
         deliveryDate,
         finalBatchNumbers,
-        executeProductTallyApiCalls_flag
+        executeProductTallyApiCalls_flag,
+        this.requestParams.is_same_day
       );
 
       // Store the results

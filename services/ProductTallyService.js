@@ -20,9 +20,10 @@ class ProductTallyService {
    * @param {string} deliveryDate - Delivery date in YYYY-MM-DD format
    * @param {Object} finalBatchNumbers - Batch numbers per location
    * @param {boolean} executeApiCall - Whether to actually call the API (dev_mode flag)
+   * @param {string} isSameDay - Same-day delivery flag ("0" or "1")
    * @returns {Object} Results object with success status and details
    */
-  async calculateAndSubmitTallies(orderTrackingArray, deliveryDate, finalBatchNumbers, executeApiCall) {
+  async calculateAndSubmitTallies(orderTrackingArray, deliveryDate, finalBatchNumbers, executeApiCall, isSameDay) {
     const startTime = Date.now();
 
     console.log('=== PRODUCT TALLY SERVICE START ===');
@@ -63,10 +64,12 @@ class ProductTallyService {
 
         // Build API payload
         const tablesData = this.formatTalliesForApi(tallies);
+        const deliveryType = isSameDay === '1' ? 'same-day' : 'next-day';
         const payload = {
           location: location,
           delivery_date: deliveryDate,
           batch: finalBatchNumbers[location],
+          isSameDay: deliveryType,
           ...tablesData
         };
 

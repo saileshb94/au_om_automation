@@ -221,6 +221,7 @@ class GoPeopleApiService {
         location: location,
         delivery_date: deliveryDate,
         batch: finalBatchNumbers ? finalBatchNumbers[location] : 1,
+        isSameDay: "same-day",
         gp_labels_data: gpLabelsDataArray
       };
 

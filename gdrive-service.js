@@ -83,7 +83,7 @@ class GoogleDriveService {
         }
     }
 
-    async preCreateFolderStructure(successfulOrders, deliveryDate, batchNumbers) {
+    async preCreateFolderStructure(successfulOrders, deliveryDate, batchNumbers, isSameDay) {
         if (!this.initialized) {
             await this.initialize();
         }
@@ -100,6 +100,9 @@ class GoogleDriveService {
         };
 
         try {
+            // Determine delivery type based on isSameDay parameter
+            const deliveryType = isSameDay === '1' ? 'same-day' : 'next-day';
+
             // Extract unique locations from successful orders
             const uniqueLocations = [...new Set(
                 successfulOrders
@@ -108,11 +111,11 @@ class GoogleDriveService {
             )];
 
             results.summary.totalLocations = uniqueLocations.length;
-            console.log(`Pre-creating folder structure for ${uniqueLocations.length} locations on ${deliveryDate}`);
+            console.log(`Pre-creating folder structure for ${uniqueLocations.length} locations on ${deliveryDate} (${deliveryType})`);
 
             for (const location of uniqueLocations) {
                 const batchNumber = batchNumbers[location];
-                
+
                 if (batchNumber === undefined || batchNumber === null) {
                     console.log(`No batch number for location: ${location}, skipping folder pre-creation`);
                     results.failedFolders.push({
@@ -125,25 +128,26 @@ class GoogleDriveService {
                 }
 
                 try {
-                    console.log(`Creating folder structure for ${location}, batch ${batchNumber}`);
-                    
-                    // Create folder structure: main -> location -> delivery_date -> batch_number
+                    console.log(`Creating folder structure for ${location}, batch ${batchNumber} (${deliveryType})`);
+
+                    // Create folder structure: main -> location -> delivery_date -> batch_number_delivery-type
                     const locationFolderId = await this.findOrCreateFolder(
-                        GOOGLE_DRIVE_CONFIG.mainFolderId, 
+                        GOOGLE_DRIVE_CONFIG.mainFolderId,
                         location
                     );
 
                     const dateFolderId = await this.findOrCreateFolder(
-                        locationFolderId, 
+                        locationFolderId,
                         deliveryDate
                     );
 
+                    const batchFolderName = `Batch_${batchNumber}_${deliveryType}`;
                     const batchFolderId = await this.findOrCreateFolder(
-                        dateFolderId, 
-                        `Batch_${batchNumber}`
+                        dateFolderId,
+                        batchFolderName
                     );
 
-                    const folderPath = `${location}/${deliveryDate}/Batch_${batchNumber}`;
+                    const folderPath = `${location}/${deliveryDate}/${batchFolderName}`;
                     
                     results.createdFolders.push({
                         location: location,
@@ -455,7 +459,7 @@ class GoogleDriveService {
         return mimeTypes[extension] || 'image/jpeg';
     }
 
-    async processPolaroidImages(personalizedData, deliveryDate, batchNumbers) {
+    async processPolaroidImages(personalizedData, deliveryDate, batchNumbers, isSameDay) {
         if (!this.initialized) {
             await this.initialize();
         }
@@ -465,6 +469,9 @@ class GoogleDriveService {
         let failureCount = 0;
 
         try {
+            // Determine delivery type based on isSameDay parameter
+            const deliveryType = isSameDay === '1' ? 'same-day' : 'next-day';
+
             for (const locationData of personalizedData) {
                 if (!locationData.polaroid_photo_data) continue;
 
@@ -476,23 +483,24 @@ class GoogleDriveService {
                     continue;
                 }
 
-                console.log(`Processing polaroid images for ${location}, batch ${batchNumber}`);
+                console.log(`Processing polaroid images for ${location}, batch ${batchNumber} (${deliveryType})`);
 
-                // Folders should already exist from pre-creation, but use findOrCreateFolder 
+                // Folders should already exist from pre-creation, but use findOrCreateFolder
                 // to ensure they exist (will just find them if already created)
                 const locationFolderId = await this.findOrCreateFolder(
-                    GOOGLE_DRIVE_CONFIG.mainFolderId, 
+                    GOOGLE_DRIVE_CONFIG.mainFolderId,
                     location
                 );
 
                 const dateFolderId = await this.findOrCreateFolder(
-                    locationFolderId, 
+                    locationFolderId,
                     deliveryDate
                 );
 
+                const batchFolderName = `Batch_${batchNumber}_${deliveryType}`;
                 const batchFolderId = await this.findOrCreateFolder(
-                    dateFolderId, 
-                    `Batch_${batchNumber}`
+                    dateFolderId,
+                    batchFolderName
                 );
 
                 // Process each polaroid batch (should be only one batch with all images)
