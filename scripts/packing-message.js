@@ -20,8 +20,8 @@ SELECT
             'ingredients', (
                 SELECT JSON_ARRAYAGG(
                     JSON_OBJECT(
-					'qty', TRIM(TRAILING '0' FROM TRIM(TRAILING '.' FROM CAST(cb.qty AS CHAR))),
-					'title', CASE 
+					'ing_qty', TRIM(TRAILING '0' FROM TRIM(TRAILING '.' FROM CAST(cb.qty AS CHAR))),
+					'ing_title', CASE 
 						WHEN cb.bundle_product_id IS NULL OR cb.bundle_product_id = 0 
 							THEN cbi.ingredient_name
 							ELSE (

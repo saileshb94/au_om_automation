@@ -61,16 +61,16 @@ const LOCATION_ADDRESSES = {
     }]
   },
   'Perth': {
-    unit: "4",
-    address1: "35 Colin Jamieson Dr", // TODO: Replace with actual address
-    suburb: "Welshpool",
+    unit: "1",
+    address1: "27 Townsend St", // TODO: Replace with actual address
+    suburb: "Malaga",
     state: "WA",
-    postcode: "6106",
+    postcode: "6090",
     isCommercial: true,
     companyName: "Lvly Perth",
     contacts: [{
       contactName: "Lvly",
-      contactNumber: "0390712481", // TODO: Replace with actual number
+      contactNumber: "0390710475", // TODO: Replace with actual number
       sendUpdateSMS: false,
       contactEmail: "",
       sendUpdateEmail: false
@@ -462,11 +462,11 @@ const AUSPOST_LOCATION_ADDRESSES = {
     },
     'Perth': {
       name: "Lvly Perth",
-      lines: ["4, 35 Colin Jamieson Dr"],
-      suburb: "Welshpool",
+      lines: ["1, 27 Townsend St"],
+      suburb: "Malaga",
       state: "WA",
-      postcode: "6106",
-      phone: "0390712481",
+      postcode: "6090",
+      phone: "0390710475",
       email: "perth@lvly.com.au"
     },
     'Adelaide': {
@@ -495,7 +495,7 @@ const AUSPOST_LOCATION_ADDRESSES = {
       suburb: "MOORABBIN",
       state: "VIC",
       postcode: "3189",
-      phone: "0390710475",
+      phone: "0272598209",
       email: "melbourne@lvly.com.au"
     },
     'Sydney': {
@@ -504,16 +504,16 @@ const AUSPOST_LOCATION_ADDRESSES = {
       suburb: "Alexandria",
       state: "NSW",
       postcode: "2015",
-      phone: "0390710475",
+      phone: "0272598209",
       email: "sydney@lvly.com.au"
     },
     'Perth': {
       name: "Bloomeroo Perth",
-      lines: ["4, 35 Colin Jamieson Dr"],  // TODO: Update with actual Bloomeroo addresses
-      suburb: "Welshpool",
+      lines: ["1, 27 Townsend St"],
+      suburb: "Malaga",
       state: "WA",
-      postcode: "6106",
-      phone: "0390712481",
+      postcode: "6090",
+      phone: "0272598209",
       email: "perth@lvly.com.au"
     },
     'Adelaide': {
@@ -531,7 +531,7 @@ const AUSPOST_LOCATION_ADDRESSES = {
       suburb: "Moorooka",
       state: "QLD",
       postcode: "4105",
-      phone: "0390710475",
+      phone: "0272598209",
       email: "brisbane@lvly.com.au"
     }
   }
