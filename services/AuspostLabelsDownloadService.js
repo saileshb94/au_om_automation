@@ -57,7 +57,8 @@ class AuspostLabelsDownloadService {
             labelData.label_url,
             location,
             labelData.delivery_date,
-            labelData.batch
+            labelData.batch,
+            labelData.isSameDay
           );
 
           results.processedLocations.push({
@@ -125,9 +126,10 @@ class AuspostLabelsDownloadService {
    * @param {string} location - Location name (e.g., 'Melbourne')
    * @param {string} deliveryDate - Delivery date (YYYY-MM-DD)
    * @param {number} batch - Batch number
+   * @param {string} isSameDay - Delivery type ('same-day' or 'next-day')
    * @returns {Promise<Object>} Upload result with file details
    */
-  async downloadAndUploadLabel(labelUrl, location, deliveryDate, batch) {
+  async downloadAndUploadLabel(labelUrl, location, deliveryDate, batch, isSameDay) {
     console.log(`\n📥 Downloading label PDF from URL...`);
     console.log(`  URL: ${labelUrl}`);
 
@@ -156,7 +158,8 @@ class AuspostLabelsDownloadService {
         filename,
         location,
         deliveryDate,
-        batch
+        batch,
+        isSameDay
       );
 
       console.log(`✅ Upload successful - File ID: ${uploadResult.fileId}`);

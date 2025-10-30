@@ -42,11 +42,18 @@ SELECT
     so.note,
     sode.sender_name as from_sender,
     sos.name as to_recipient,
-    CASE 
-        WHEN sos.address2 IS NOT NULL AND sos.address2 != '' 
-        THEN CONCAT(sos.address1, ', ', sos.address2)
-        ELSE sos.address1
-    END AS address
+    CONCAT_WS(', ',
+        NULLIF(TRIM(CONCAT(
+            COALESCE(sode.room_number, ''),
+            CASE WHEN sode.room_number IS NOT NULL AND sode.room_number != '' AND sode.building_name IS NOT NULL AND sode.building_name != ''
+                THEN ', ' ELSE '' END,
+            COALESCE(sode.building_name, '')
+        )), ''),
+        NULLIF(sos.address1, ''),
+        NULLIF(sos.address2, ''),
+        NULLIF(sos.city, ''),
+        CONCAT_WS(' ', NULLIF(sos.province, ''), NULLIF(sos.zip, ''))
+    ) AS address
     
 FROM flowerchimp.shopify_orders so
 LEFT JOIN 
@@ -156,12 +163,14 @@ function transformPackingSlips(rawData, validLocations, finalBatchNumbers) {
                 shop_id: row.shop_id,
                 order_number: row.order_number,
                 packers_note: row.packers_note || null,
-                delivery_date: row.delivery_date,
+                delivery_date: row.delivery_date ? new Date(row.delivery_date).toISOString().split('T')[0] : null,
                 products: products,
                 recipient_name: row.to_recipient || null,
                 note: row.note || null,
                 from: row.from_sender || null,
-                to: row.recipient_name || null,
+                to: (!row.from_sender && !row.note && !row.recipient_name)
+                    ? (row.to_recipient || null)
+                    : (row.recipient_name || null),
                 address: row.address || null
             };
             
@@ -217,7 +226,9 @@ function transformMessageCards(rawData, validLocations, finalBatchNumbers) {
                 order_number: row.order_number,
                 from: row.from_sender || null,
                 note: row.note || null,
-                to: row.recipient_name || null
+                to: (!row.from_sender && !row.note && !row.recipient_name)
+                    ? (row.to_recipient || null)
+                    : (row.recipient_name || null)
             };
 
             locationGroups[row.location_name].push(messageCard);

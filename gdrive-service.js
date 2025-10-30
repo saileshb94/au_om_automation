@@ -928,7 +928,7 @@ class GoogleDriveService {
      * @param {number} batch - Batch number
      * @returns {Promise<Object>} Upload result with file details
      */
-    async uploadPdfToFolder(pdfBuffer, filename, location, deliveryDate, batch) {
+    async uploadPdfToFolder(pdfBuffer, filename, location, deliveryDate, batch, isSameDay) {
         if (!this.initialized) {
             await this.initialize();
         }
@@ -954,12 +954,13 @@ class GoogleDriveService {
                 deliveryDate
             );
 
+            const deliveryType = isSameDay === '1' ? 'same-day' : 'next-day';
             const batchFolderId = await this.findOrCreateFolder(
                 dateFolderId,
-                `Batch_${batch}`
+                `Batch_${batch}_${deliveryType}`
             );
 
-            const folderPath = `${location}/${deliveryDate}/Batch_${batch}`;
+            const folderPath = `${location}/${deliveryDate}/Batch_${batch}_${deliveryType}`;
             console.log(`✅ Folder structure ready: ${folderPath}`);
 
             // Upload the PDF file
