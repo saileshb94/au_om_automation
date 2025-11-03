@@ -62,6 +62,25 @@ class AuspostApiService {
     };
   }
 
+  // Extract detailed error messages from AusPost API error responses
+  extractAuspostError(error) {
+    // Handle AusPost error response structure
+    if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+      // Multiple validation errors array
+      return error.response.data.errors
+        .map(e => `${e.field || 'unknown'}: ${e.message || e.name || 'Unknown error'}`)
+        .join(' | ');
+    } else if (error.response?.data?.message) {
+      // Single error message
+      return error.response.data.message;
+    } else if (error.response?.data?.error) {
+      // Alternative error format
+      return error.response.data.error;
+    }
+    // Fallback to generic message
+    return error.message;
+  }
+
   async callAuspostAPI(orderData) {
     console.log(`\n📋 orDerData ===`);
     console.log(orderData);
@@ -190,7 +209,7 @@ class AuspostApiService {
       return {
         orderNumber: orderData.orderNumber,
         success: false,
-        error: error.response?.data?.message || error.message,
+        error: this.extractAuspostError(error),
         httpStatus: error.response?.status || 0,
         errorDetails: error.response?.data || null,
         requestPayload: orderData.apiPayload, // Store payload even on error
