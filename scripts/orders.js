@@ -6,7 +6,7 @@ SELECT
     so.shop_id,
     sfl.location_name,
     sode.delivery_date,
-    (SELECT GROUP_CONCAT(DISTINCT sp2.title ORDER BY sp2.title SEPARATOR ', ') FROM shopify_order_products sop2 LEFT JOIN shopify_products sp2 ON sp2.variant_id = sop2.variant_id WHERE sop2.order_id = so.id) as order_products
+    (SELECT GROUP_CONCAT(sp2.title ORDER BY sp2.title SEPARATOR ', ') FROM shopify_order_products sop2 LEFT JOIN shopify_products sp2 ON sp2.variant_id = sop2.variant_id WHERE sop2.order_id = so.id) as order_products
 FROM (
     SELECT
         so.id,

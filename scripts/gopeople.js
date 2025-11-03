@@ -31,7 +31,22 @@ SELECT
     sos.province,
     sos.zip,
     so.email,
-    sos.company
+    sos.company,
+    COALESCE(
+		(
+			SELECT SUM(
+				CASE
+					WHEN sp2.is_bundle = 1 OR sp2.type LIKE '%flower%' OR sp2.type LIKE '%bundle%' THEN 1
+					ELSE 0
+				END
+			)
+			FROM shopify_order_products sop2
+			LEFT JOIN shopify_products sp2 ON sp2.shopify_product_id = sop2.product_id 
+				AND sp2.variant_id = sop2.variant_id
+			WHERE sop2.order_id = so.id 
+				AND (sop2.is_remove = false OR sop2.is_remove IS NULL)
+		), 0
+	) AS bundles
 FROM shopify_orders so
 LEFT JOIN 
     shopify_order_additional_details sode ON so.id = sode.order_id
@@ -40,8 +55,7 @@ LEFT JOIN
 LEFT JOIN 
     shopify_fulfillment_locations sfl ON so.fulfillment_location_id = sfl.id
 WHERE sode.is_same_day = 1
-ORDER BY so.created_at DESC
-LIMIT 100;
+ORDER BY so.created_at DESC;
 `;
 
 // Timezone functions moved to TimezoneHelper utility
