@@ -51,7 +51,7 @@ LEFT JOIN
 LEFT JOIN
     shopify_fulfillment_locations sfl ON so.fulfillment_location_id = sfl.id
 WHERE
-    ranked_orders.rn <= 30
+    ranked_orders.rn <= PLACEHOLDER_ORDER_LIMIT
 ORDER BY
     sfl.location_name, so.created_at DESC;
 `;

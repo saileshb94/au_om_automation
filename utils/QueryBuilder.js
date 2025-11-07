@@ -1,4 +1,5 @@
 const DateHelper = require('./DateHelper');
+const { ORDERS_QUERY_CONFIG } = require('../config');
 
 class QueryBuilder {
   static buildDynamicQuery(baseQuery, params, scriptKey) {
@@ -126,6 +127,15 @@ class QueryBuilder {
         console.log('Orders: is_same_day not provided, defaulting to 1 (GoPeople)');
         query = query.replace('PLACEHOLDER_IS_SAME_DAY', '?');
         queryParams.push('1');
+      }
+
+      // Handle order limit placeholder
+      if (params.isManualProcessing === true) {
+        console.log(`Orders: Manual processing mode - removing order limit (setting to ${ORDERS_QUERY_CONFIG.manualModeLimit})`);
+        query = query.replace('PLACEHOLDER_ORDER_LIMIT', String(ORDERS_QUERY_CONFIG.manualModeLimit));
+      } else {
+        console.log(`Orders: Automatic processing mode - applying ${ORDERS_QUERY_CONFIG.automaticModeLimit} order limit per location`);
+        query = query.replace('PLACEHOLDER_ORDER_LIMIT', String(ORDERS_QUERY_CONFIG.automaticModeLimit));
       }
 
       console.log('Final queryParams array:', queryParams);

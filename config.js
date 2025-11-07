@@ -1766,6 +1766,18 @@ const EMAIL_CONFIG = {
   }
 };
 
+/**
+ * Orders Query Configuration
+ * Controls order limit filtering behavior for the orders script
+ * - automaticModeLimit: Maximum orders per location for automatic processing (/ route)
+ * - manualModeLimit: Maximum orders per location for manual processing (/fos-process-orders route)
+ *   Set to a high number (99999) to effectively remove the limit
+ */
+const ORDERS_QUERY_CONFIG = {
+  automaticModeLimit: 40,      // Top N orders per location for automatic mode
+  manualModeLimit: 99999       // Effectively unlimited for manual mode
+};
+
 
 // Export all configurations
 module.exports = {
@@ -1793,5 +1805,6 @@ module.exports = {
   PRODUCT_TALLY_API_CONFIG,
   PRODUCT_TALLY_RULES,
   GOOGLE_SHEETS_CONFIG,
-  EMAIL_CONFIG
+  EMAIL_CONFIG,
+  ORDERS_QUERY_CONFIG
 };
