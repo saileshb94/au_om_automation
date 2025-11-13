@@ -55,21 +55,43 @@ class PropertyExtractor {
   static extractProseccoMessage(properties) {
     try {
       const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
-      
+
       if (!Array.isArray(propertiesArray)) {
         return null;
       }
-      
+
       // Look for 'message' only
       for (const prop of propertiesArray) {
         if (prop.name === 'message' && prop.value) {
           return prop.value;
         }
       }
-      
+
       return null;
     } catch (error) {
       console.error('Error extracting prosecco message:', error);
+      return null;
+    }
+  }
+
+  static extractBaubleMessage(properties) {
+    try {
+      const propertiesArray = typeof properties === 'string' ? JSON.parse(properties) : properties;
+
+      if (!Array.isArray(propertiesArray)) {
+        return null;
+      }
+
+      // Look for 'message' only
+      for (const prop of propertiesArray) {
+        if (prop.name === 'message' && prop.value) {
+          return prop.value;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error extracting bauble message:', error);
       return null;
     }
   }

@@ -618,24 +618,45 @@ const AUSPOST_LABELS_CONFIG = {
   apiUrl_test: 'https://digitalapi.auspost.com.au/test/shipping/v1/labels',
   wait_for_label_url: true,
   unlabelled_articles_only: false,
-  preferences: [
+
+  // Location-specific layout configuration
+  locationLayouts: {
+    'Melbourne': 'A6-1pp', //A6-1pp or A4-4pp
+    'Sydney': 'A6-1pp',
+    'Perth': 'A6-1pp',
+    'Adelaide': 'A4-4pp',
+    'Brisbane': 'A4-4pp'
+  },
+  defaultLayout: 'A4-4pp', // Fallback if location not found
+
+  timeout: 30000, // 30 seconds
+  retryAttempts: 3,
+  retryDelay: 1000
+};
+
+/**
+ * Get AusPost label preferences with location-specific layout
+ * @param {string} location - Location name (Melbourne, Sydney, Perth, Adelaide, Brisbane)
+ * @returns {Array} Preferences array with location-specific layout
+ */
+function getAuspostLabelPreferences(location) {
+  const layout = AUSPOST_LABELS_CONFIG.locationLayouts[location] || AUSPOST_LABELS_CONFIG.defaultLayout;
+
+  return [
     {
       type: "PRINT",
       groups: [
         {
           group: "StarTrack",
-          layout: "A4-4pp",
+          layout: layout, // A4-4pp or A6-1pp based on location
           branded: true,
           left_offset: 0,
           top_offset: 0
         }
       ]
     }
-  ],
-  timeout: 30000, // 30 seconds
-  retryAttempts: 3,
-  retryDelay: 1000
-};
+  ];
+}
 
 /**
  * Auspost API Credentials Configuration
@@ -710,62 +731,31 @@ const GOOGLE_DRIVE_CONFIG = {
 
 /**
  * Personalized Packing Notes API Configuration
- * API endpoints for processing different types of personalized data
+ * Contains base URL and common settings for personalized template APIs
+ *
+ * NOTE: Endpoint URLs are now location-specific and configured in TEMPLATE_ENDPOINTS_CONFIG
+ * Use getTemplateConfig(location, templateType) to get the appropriate endpoint for each location
  */
 const PERSONALIZED_API_CONFIG = {
   baseUrl: 'https://limitless.docupilot.app/dashboard/documents/create',
   apiKey: process.env.PERSONALIZED_API_KEY,
   timeout: 30000,
   retryAttempts: 3,
-  retryDelay: 1000,
-  endpoints: {
-    jars_luxe: {
-      url: '/ac919e50/474c90b5',
-      method: 'POST',
-      description: 'Process luxe jar personalization data'
-    },
-    jars_classic_large: {
-      url: '/ac919e50/fed759df',
-      method: 'POST',
-      description: 'Process classic large jar personalization data'
-    },
-    prosecco: {
-      url: '/ac919e50/414e6c2e',
-      method: 'POST',
-      description: 'Process prosecco data'
-    },
-    packing_slips: {
-      url: '/ac919e50/04e72138',
-      method: 'POST',
-      description: 'Process packing slip data'
-    },
-    message_cards: {
-      url: '/ac919e50/babd4a32',
-      method: 'POST',
-      description: 'Process message card data'
-    },
-    candles: {
-      url: '/ac919e50/7ec2e86f',
-      method: 'POST',
-      description: 'Process candles data'
-    }
-  }
+  retryDelay: 1000
 };
 
 /**
  * GoPeople Labels API Configuration
- * API endpoint for processing GoPeople label data from successful orders
+ * Contains base URL and common settings for GoPeople labels API
+ *
+ * NOTE: Endpoint URL is now location-specific and configured in TEMPLATE_ENDPOINTS_CONFIG
+ * Use getTemplateConfig(location, 'gp_labels') to get the appropriate endpoint for each location
  */
 const GP_LABELS_API_CONFIG = {
   baseUrl: 'https://limitless.docupilot.app/dashboard/documents/create',
   timeout: 30000,
   retryAttempts: 3,
-  retryDelay: 1000,
-  endpoint: {
-    url: '/ac919e50/944bc033',
-    method: 'POST',
-    description: 'Process GoPeople label data for printing'
-  }
+  retryDelay: 1000
 };
 
 /**
@@ -1473,6 +1463,11 @@ const PRODUCT_TALLY_RULES = {
           type: 'simple',
           label: 'green_hydrangea',
           searchTexts: ['green hydrangea']
+        },
+        {
+          type: 'simple',
+          label: 'pink_hydrangea',
+          searchTexts: ['pink hydrangea']
         }
       ]
     },
@@ -1485,11 +1480,11 @@ const PRODUCT_TALLY_RULES = {
           fields: [
             {
               fieldName: 'medium',
-              searchTexts: ['medium - auburn glow']
+              searchTexts: ['medium - auburn glow','medium - golden']
             },
             {
               fieldName: 'large',
-              searchTexts: ['large - auburn glow']
+              searchTexts: ['large - auburn glow','large - golden']
             }
           ]
         },
@@ -1499,11 +1494,11 @@ const PRODUCT_TALLY_RULES = {
           fields: [
             {
               fieldName: 'medium',
-              searchTexts: ['medium - dream girl']
+              searchTexts: ['medium - dream girl','medium - dream blooms']
             },
             {
               fieldName: 'large',
-              searchTexts: ['large - dream girl']
+              searchTexts: ['large - dream girl','large - dream blooms']
             }
           ]
         },
@@ -1513,11 +1508,11 @@ const PRODUCT_TALLY_RULES = {
           fields: [
             {
               fieldName: 'medium',
-              searchTexts: ['medium - sorbet']
+              searchTexts: ['medium - sorbet','medium - colour crush']
             },
             {
               fieldName: 'large',
-              searchTexts: ['large - sorbet']
+              searchTexts: ['large - sorbet','large - colour crush']
             }
           ]
         }
@@ -1528,71 +1523,7 @@ const PRODUCT_TALLY_RULES = {
 };
 
 
-const PRODUCT_TALLY_RULES_SAMPLE = {
-  tables: [
-    {
-      name: 'placeholder_table_1',
-      rows: [
-        {
-          type: 'simple',
-          label: 'Luxe_Products',
-          searchTexts: ['luxe']
-        },
-        {
-          type: 'simple',
-          label: 'Large_Products',
-          searchTexts: ['large']
-        }
-      ]
-    },
-    {
-      name: 'placeholder_table_2',
-      rows: [
-        {
-          type: 'complex',
-          label: 'Candle',
-          fields: [
-            {
-              fieldName: 'Small',
-              searchTexts: ['small candle', 'mini candle']
-            },
-            {
-              fieldName: 'Medium',
-              searchTexts: ['medium candle', 'regular candle']
-            },
-            {
-              fieldName: 'Large',
-              searchTexts: ['large candle', 'big candle']
-            }
-          ]
-        },
-        {
-          type: 'complex',
-          label: 'Polaroid',
-          fields: [
-            {
-              fieldName: 'Small',
-              searchTexts: ['small polaroid', 'mini polaroid']
-            },
-            {
-              fieldName: 'Medium',
-              searchTexts: ['medium polaroid']
-            },
-            {
-              fieldName: 'Large',
-              searchTexts: ['large polaroid', 'big polaroid']
-            }
-          ]
-        },
-        {
-          type: 'simple',
-          label: 'Prosecco',
-          searchTexts: ['prosecco', 'champagne']
-        }
-      ]
-    }
-  ]
-};
+
 
 /**
  * Google Sheets Configuration
@@ -1778,6 +1709,161 @@ const ORDERS_QUERY_CONFIG = {
   manualModeLimit: 99999       // Effectively unlimited for manual mode
 };
 
+// ============================================================================
+// TEMPLATE VERSION CONFIGURATION
+// ============================================================================
+
+/**
+ * Template Version Configuration
+ * Controls which template version (old/new) to use per location and template type
+ * Each location can independently select old/new for each template
+ *
+ * To switch a template version for a location, change 'old' to 'new' or vice versa
+ * Example: To use new GP labels for Sydney, set: Sydney.gp_labels = 'new'
+ */
+const TEMPLATE_VERSION_CONFIG = {
+  Melbourne: {
+    gp_labels: 'new',
+    message_cards: 'new',
+    packing_slips: 'old',
+    candles: 'old',
+    jars_luxe: 'old',
+    jars_classic_large: 'old',
+    prosecco: 'old',
+    bauble: 'old'
+  },
+  Sydney: {
+    gp_labels: 'new',
+    message_cards: 'new',
+    packing_slips: 'old',
+    candles: 'old',
+    jars_luxe: 'old',
+    jars_classic_large: 'old',
+    prosecco: 'old',
+    bauble: 'old'
+  },
+  Perth: {
+    gp_labels: 'new',
+    message_cards: 'new',
+    packing_slips: 'old',
+    candles: 'old',
+    jars_luxe: 'old',
+    jars_classic_large: 'old',
+    prosecco: 'old',
+    bauble: 'old'
+  },
+  Adelaide: {
+    gp_labels: 'old',
+    message_cards: 'old',
+    packing_slips: 'old',
+    candles: 'old',
+    jars_luxe: 'old',
+    jars_classic_large: 'old',
+    prosecco: 'old',
+    bauble: 'old'
+  },
+  Brisbane: {
+    gp_labels: 'old',
+    message_cards: 'old',
+    packing_slips: 'old',
+    candles: 'old',
+    jars_luxe: 'old',
+    jars_classic_large: 'old',
+    prosecco: 'old',
+    bauble: 'old'
+  }
+};
+
+/**
+ * Template Endpoints and Grouping Configuration
+ * Defines OLD and NEW versions of API endpoints and grouping numbers (batch sizes)
+ *
+ * Grouping numbers control how many items are batched together in a single batch object:
+ * - groupingNumber = 1: Each batch object contains 1 item (field1 only)
+ * - groupingNumber = 5: Each batch object contains up to 5 items (field1-5)
+ * - groupingNumber = 12: Each batch object contains up to 12 items (field1-12)
+ *
+ * All batch objects are sent in a single API call regardless of grouping number
+ */
+const TEMPLATE_ENDPOINTS_CONFIG = {
+  old: {
+    // Existing endpoints
+    endpoints: {
+      gp_labels: '/ac919e50/944bc033',
+      jars_luxe: '/ac919e50/474c90b5',
+      jars_classic_large: '/ac919e50/fed759df',
+      prosecco: '/ac919e50/414e6c2e',
+      bauble: '/ac919e50/85a64a0a',
+      packing_slips: '/ac919e50/04e72138',
+      message_cards: '/ac919e50/babd4a32',
+      candles: '/ac919e50/7ec2e86f'
+    },
+    // Grouping numbers for templates that use batching
+    groupingNumbers: {
+      gp_labels: 12,
+      message_cards: 12,
+      candles: 12,
+      jars_luxe: 2,
+      jars_classic_large: 2,
+      prosecco: 6,
+      bauble: 6
+      // Note: packing_slips and polaroid don't use grouping (send all unbatched)
+    }
+  },
+  new: {
+    // NEW endpoints (same as old for now, can be updated later)
+    endpoints: {
+      gp_labels: '/ac919e50/d65bef55',
+      jars_luxe: '/ac919e50/474c90b5',
+      jars_classic_large: '/ac919e50/fed759df',
+      prosecco: '/ac919e50/414e6c2e',
+      bauble: '/ac919e50/85a64a0a',
+      packing_slips: '/ac919e50/04e72138',
+      message_cards: '/ac919e50/b372847e',
+      candles: '/ac919e50/7ec2e86f'
+    },
+    // NEW grouping numbers (all set to 1 - one item per batch object)
+    groupingNumbers: {
+      gp_labels: 1,
+      message_cards: 1,
+      candles: 12,
+      jars_luxe: 2,
+      jars_classic_large: 2,
+      prosecco: 6,
+      bauble: 6
+    }
+  }
+};
+
+/**
+ * Get the appropriate endpoint and grouping number for a specific location and template
+ * @param {string} location - Location name (Melbourne, Sydney, Perth, Adelaide, Brisbane)
+ * @param {string} templateType - Template type (gp_labels, message_cards, candles, jars_luxe, jars_classic_large, prosecco, packing_slips)
+ * @returns {object} { endpoint: string, groupingNumber: number|null, version: string }
+ */
+function getTemplateConfig(location, templateType) {
+  // Get the version for this location and template (default to 'old' if not found)
+  const version = TEMPLATE_VERSION_CONFIG[location]?.[templateType] || 'old';
+
+  // Get the config for that version
+  const versionConfig = TEMPLATE_ENDPOINTS_CONFIG[version];
+
+  if (!versionConfig) {
+    console.warn(`⚠️ Template version '${version}' not found, falling back to 'old'`);
+    const fallbackConfig = TEMPLATE_ENDPOINTS_CONFIG['old'];
+    return {
+      endpoint: fallbackConfig.endpoints[templateType],
+      groupingNumber: fallbackConfig.groupingNumbers[templateType] || null,
+      version: 'old'
+    };
+  }
+
+  return {
+    endpoint: versionConfig.endpoints[templateType],
+    groupingNumber: versionConfig.groupingNumbers[templateType] || null,
+    version: version
+  };
+}
 
 // Export all configurations
 module.exports = {
@@ -1806,5 +1892,11 @@ module.exports = {
   PRODUCT_TALLY_RULES,
   GOOGLE_SHEETS_CONFIG,
   EMAIL_CONFIG,
-  ORDERS_QUERY_CONFIG
+  ORDERS_QUERY_CONFIG,
+  // Template version configuration exports
+  TEMPLATE_VERSION_CONFIG,
+  TEMPLATE_ENDPOINTS_CONFIG,
+  getTemplateConfig,
+  // AusPost Labels helper
+  getAuspostLabelPreferences
 };

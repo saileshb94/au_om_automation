@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { getTemplateConfig } = require('../config');
 
 class GoPeopleApiService {
   constructor(apiTokenProd, apiTokenTest, apiUrlProd, apiUrlTest, devMode) {
@@ -198,14 +199,23 @@ class GoPeopleApiService {
       const sampleOrder = successfulOrders.find(o => o.location === location);
       const deliveryDate = sampleOrder?.deliveryDate || new Date().toISOString().split('T')[0];
 
+      // Get dynamic grouping number for this location
+      const templateConfig = getTemplateConfig(location, 'gp_labels');
+      const groupingNumber = templateConfig.groupingNumber || 12; // Default to 12 if not found
+
+      console.log(`\n  📋 GP Labels Template Configuration for ${location}:`);
+      console.log(`     Version: ${templateConfig.version}`);
+      console.log(`     Grouping Number: ${groupingNumber}`);
+      console.log(`     Endpoint: ${templateConfig.endpoint}`);
+
       const gpLabelsDataArray = [];
 
-      // Create batches of 12 orders each
-      for (let i = 0; i < orders.length; i += 12) {
-        const batchOrders = orders.slice(i, i + 12);
-        const batchNumber = Math.floor(i / 12) + 1;
+      // Create batches using dynamic grouping number
+      for (let i = 0; i < orders.length; i += groupingNumber) {
+        const batchOrders = orders.slice(i, i + groupingNumber);
+        const batchNumber = Math.floor(i / groupingNumber) + 1;
 
-        // Convert array to object with gp1, gp2, gp3 keys
+        // Convert array to object with gp1, gp2, gp3... keys
         const gpLabelsDataObject = {};
         batchOrders.forEach((order, index) => {
           const key = `gp${index + 1}`;
@@ -213,7 +223,7 @@ class GoPeopleApiService {
         });
         gpLabelsDataArray.push(gpLabelsDataObject);
 
-        console.log(`  Created batch ${batchNumber} with ${batchOrders.length} orders`);
+        console.log(`  Created batch ${batchNumber} with ${batchOrders.length} orders (grouping: ${groupingNumber})`);
       }
 
       // Create single batch data per location (after processing all orders)

@@ -1,5 +1,6 @@
 // Personalized products script - processes jars, candles, plants, proseccos, and polaroids
 const PropertyExtractor = require('../utils/PropertyExtractor');
+const { getTemplateConfig } = require('../config');
 
 const query = `
 SELECT 
@@ -23,7 +24,7 @@ LEFT JOIN
     shopify_order_products sop ON so.id = sop.order_id
 LEFT JOIN 
     shopify_products sp ON sp.variant_id = sop.variant_id
-WHERE (sp.tags LIKE '%product:personalisedjar%' OR sp.tags LIKE '%product:personalisedcandle%' OR sp.tags LIKE '%product:personalisedplant%' OR sp.tags LIKE '%product:personalisedbottle%' OR sp.tags LIKE '%product:imageupload%')
+WHERE (sp.tags LIKE '%product:personalisedjar%' OR sp.tags LIKE '%product:personalisedcandle%' OR sp.tags LIKE '%product:personalisedplant%' OR sp.tags LIKE '%product:personalisedbottle%' OR sp.tags LIKE '%product:imageupload%' OR sp.tags LIKE '%product:personalisedbauble%')
 ORDER BY sfl.location_name, so.created_at desc;
 `;
 
@@ -46,33 +47,37 @@ function transform(rawData) {
     const jarData = rawData.filter(row => row.tags && row.tags.includes('product:personalisedjar'));
     const candlesPlantData = rawData.filter(row => row.tags && (row.tags.includes('product:personalisedcandle') || row.tags.includes('product:personalisedplant')));
     const proseccoData = rawData.filter(row => row.tags && row.tags.includes('product:personalisedbottle'));
-    const polaroidData = rawData.filter(row => row.tags && row.tags.includes('product:imageupload')); // NEW
-    
-    console.log('Filtered data counts - Jars:', jarData.length, 'Candles/Plants:', candlesPlantData.length, 'Proseccos:', proseccoData.length, 'Polaroids:', polaroidData.length);
+    const baubleData = rawData.filter(row => row.tags && row.tags.includes('product:personalisedbauble'));
+    const polaroidData = rawData.filter(row => row.tags && row.tags.includes('product:imageupload'));
+
+    console.log('Filtered data counts - Jars:', jarData.length, 'Candles/Plants:', candlesPlantData.length, 'Proseccos:', proseccoData.length, 'Baubles:', baubleData.length, 'Polaroids:', polaroidData.length);
     
     // Process all product types
     const jarsResult = processJarsData(jarData, validLocations);
     const candlesPlantsResult = processCandlesPlantsData(candlesPlantData, validLocations);
     const proseccosResult = processProseccosData(proseccoData, validLocations);
-    const polaroidResult = processPolaroidData(polaroidData, validLocations); // NEW
-    
-    console.log('Processing results - Jars:', Object.keys(jarsResult.data).length, 'Candles/Plants:', Object.keys(candlesPlantsResult.data).length, 'Proseccos:', Object.keys(proseccosResult.data).length, 'Polaroids:', Object.keys(polaroidResult.data).length, 'locations');
+    const baubleResult = processBaubleData(baubleData, validLocations);
+    const polaroidResult = processPolaroidData(polaroidData, validLocations);
+
+    console.log('Processing results - Jars:', Object.keys(jarsResult.data).length, 'Candles/Plants:', Object.keys(candlesPlantsResult.data).length, 'Proseccos:', Object.keys(proseccosResult.data).length, 'Baubles:', Object.keys(baubleResult.data).length, 'Polaroids:', Object.keys(polaroidResult.data).length, 'locations');
     
     // Combine all product types into a single personalized result
     const transformedData = combinePersonalizedData(
-        jarsResult.data, 
-        candlesPlantsResult.data, 
-        proseccosResult.data, 
-        polaroidResult.data, // NEW
+        jarsResult.data,
+        candlesPlantsResult.data,
+        proseccosResult.data,
+        baubleResult.data,
+        polaroidResult.data,
         validLocations
     );
-    
+
     // Combine all processed order numbers from all product types
     const processedOrderNumbers = [
         ...jarsResult.orderNumbers,
         ...candlesPlantsResult.orderNumbers,
         ...proseccosResult.orderNumbers,
-        ...polaroidResult.orderNumbers // NEW
+        ...baubleResult.orderNumbers,
+        ...polaroidResult.orderNumbers
     ];
     
     // Remove duplicates and filter out any null/undefined values
@@ -142,44 +147,60 @@ function processJarsData(rawData, validLocations) {
     validLocations.forEach(locationName => {
         const luxeMessages = locationGroups[locationName].luxe || [];
         const classicLargeMessages = locationGroups[locationName].classic_large || [];
-        
+
         // console.log(`${locationName}: ${luxeMessages.length} luxe, ${classicLargeMessages.length} classic/large`);
-        
+
         const locationData = {};
-        
-        // Process luxe messages
+
+        // Process luxe messages with dynamic grouping
         if (luxeMessages.length > 0) {
+            const luxeConfig = getTemplateConfig(locationName, 'jars_luxe');
+            const groupingNumber = luxeConfig.groupingNumber || 2; // Default to 2 if not found
+
+            console.log(`\n  📋 Jars Luxe Template Configuration for ${locationName}:`);
+            console.log(`     Version: ${luxeConfig.version}`);
+            console.log(`     Grouping Number: ${groupingNumber}`);
+            console.log(`     Endpoint: ${luxeConfig.endpoint}`);
+
             const luxeBatches = [];
-            
-            for (let i = 0; i < luxeMessages.length; i += 2) {
-                const batchMessages = luxeMessages.slice(i, i + 2);
+
+            for (let i = 0; i < luxeMessages.length; i += groupingNumber) {
+                const batchMessages = luxeMessages.slice(i, i + groupingNumber);
                 const batch = {};
-                
+
                 batchMessages.forEach((message, index) => {
                     batch[`jar_message${index + 1}`] = message;
                 });
-                
+
                 luxeBatches.push(batch);
             }
-            
+
             locationData.jars_luxe_data = luxeBatches;
         }
-        
-        // Process classic/large messages
+
+        // Process classic/large messages with dynamic grouping
         if (classicLargeMessages.length > 0) {
+            const classicLargeConfig = getTemplateConfig(locationName, 'jars_classic_large');
+            const groupingNumber = classicLargeConfig.groupingNumber || 2; // Default to 2 if not found
+
+            console.log(`\n  📋 Jars Classic/Large Template Configuration for ${locationName}:`);
+            console.log(`     Version: ${classicLargeConfig.version}`);
+            console.log(`     Grouping Number: ${groupingNumber}`);
+            console.log(`     Endpoint: ${classicLargeConfig.endpoint}`);
+
             const classicLargeBatches = [];
-            
-            for (let i = 0; i < classicLargeMessages.length; i += 2) {
-                const batchMessages = classicLargeMessages.slice(i, i + 2);
+
+            for (let i = 0; i < classicLargeMessages.length; i += groupingNumber) {
+                const batchMessages = classicLargeMessages.slice(i, i + groupingNumber);
                 const batch = {};
-                
+
                 batchMessages.forEach((message, index) => {
                     batch[`jar_message${index + 1}`] = message;
                 });
-                
+
                 classicLargeBatches.push(batch);
             }
-            
+
             locationData.jars_classic_large_data = classicLargeBatches;
         }
         
@@ -226,21 +247,30 @@ function processCandlesPlantsData(rawData, validLocations) {
     
     validLocations.forEach(locationName => {
         const messages = locationGroups[locationName] || [];
-        
+
         if (messages.length > 0) {
+            // Get dynamic grouping number for candles
+            const candlesConfig = getTemplateConfig(locationName, 'candles');
+            const groupingNumber = candlesConfig.groupingNumber || 12; // Default to 12 if not found
+
+            console.log(`\n  📋 Candles Template Configuration for ${locationName}:`);
+            console.log(`     Version: ${candlesConfig.version}`);
+            console.log(`     Grouping Number: ${groupingNumber}`);
+            console.log(`     Endpoint: ${candlesConfig.endpoint}`);
+
             const batches = [];
-            
-            for (let i = 0; i < messages.length; i += 12) {
-                const batchMessages = messages.slice(i, i + 12);
+
+            for (let i = 0; i < messages.length; i += groupingNumber) {
+                const batchMessages = messages.slice(i, i + groupingNumber);
                 const batch = {};
-                
+
                 batchMessages.forEach((message, index) => {
                     batch[`candles_plants_message${index + 1}`] = message;
                 });
-                
+
                 batches.push(batch);
             }
-            
+
             result[locationName] = {
                 candles_plants_data: batches
             };
@@ -284,27 +314,103 @@ function processProseccosData(rawData, validLocations) {
     
     validLocations.forEach(locationName => {
         const messages = locationGroups[locationName] || [];
-        
+
         if (messages.length > 0) {
+            // Get dynamic grouping number for prosecco
+            const proseccoConfig = getTemplateConfig(locationName, 'prosecco');
+            const groupingNumber = proseccoConfig.groupingNumber || 6; // Default to 6 if not found
+
+            console.log(`\n  📋 Prosecco Template Configuration for ${locationName}:`);
+            console.log(`     Version: ${proseccoConfig.version}`);
+            console.log(`     Grouping Number: ${groupingNumber}`);
+            console.log(`     Endpoint: ${proseccoConfig.endpoint}`);
+
             const batches = [];
-            
-            for (let i = 0; i < messages.length; i += 6) {
-                const batchMessages = messages.slice(i, i + 6);
+
+            for (let i = 0; i < messages.length; i += groupingNumber) {
+                const batchMessages = messages.slice(i, i + groupingNumber);
                 const batch = {};
-                
+
                 batchMessages.forEach((message, index) => {
                     batch[`prosecco_message${index + 1}`] = message;
                 });
-                
+
                 batches.push(batch);
             }
-            
+
             result[locationName] = {
                 prosecco_data: batches
             };
         }
     });
     
+    return {
+        data: result,
+        orderNumbers: processedOrderNumbers
+    };
+}
+
+function processBaubleData(rawData, validLocations) {
+    const locationGroups = {};
+    const processedOrderNumbers = [];
+
+    validLocations.forEach(location => {
+        locationGroups[location] = [];
+    });
+
+    rawData.forEach(order => {
+        const messageValue = PropertyExtractor.extractBaubleMessage(order.properties);
+
+        if (messageValue && order.location_name) {
+            const locationName = order.location_name;
+
+            if (validLocations.includes(locationName)) {
+                const cleanMessage = PropertyExtractor.cleanMessage(messageValue);
+
+                locationGroups[locationName].push(cleanMessage);
+
+                // Add this order number to processed list since we used its message
+                if (order.order_number) {
+                    processedOrderNumbers.push(order.order_number);
+                }
+            }
+        }
+    });
+
+    const result = {};
+
+    validLocations.forEach(locationName => {
+        const messages = locationGroups[locationName] || [];
+
+        if (messages.length > 0) {
+            // Get dynamic grouping number for bauble
+            const baubleConfig = getTemplateConfig(locationName, 'bauble');
+            const groupingNumber = baubleConfig.groupingNumber || 6; // Default to 6 if not found
+
+            console.log(`\n  📋 Bauble Template Configuration for ${locationName}:`);
+            console.log(`     Version: ${baubleConfig.version}`);
+            console.log(`     Grouping Number: ${groupingNumber}`);
+            console.log(`     Endpoint: ${baubleConfig.endpoint}`);
+
+            const batches = [];
+
+            for (let i = 0; i < messages.length; i += groupingNumber) {
+                const batchMessages = messages.slice(i, i + groupingNumber);
+                const batch = {};
+
+                batchMessages.forEach((message, index) => {
+                    batch[`bauble_message${index + 1}`] = message;
+                });
+
+                batches.push(batch);
+            }
+
+            result[locationName] = {
+                bauble_data: batches
+            };
+        }
+    });
+
     return {
         data: result,
         orderNumbers: processedOrderNumbers
@@ -369,14 +475,15 @@ function processPolaroidData(rawData, validLocations) {
     };
 }
 
-function combinePersonalizedData(jarsResult, candlesPlantsResult, proseccosResult, polaroidResult, validLocations) {
+function combinePersonalizedData(jarsResult, candlesPlantsResult, proseccosResult, baubleResult, polaroidResult, validLocations) {
     const combinedResult = [];
-    
+
     validLocations.forEach(locationName => {
         const locationJars = jarsResult[locationName];
         const locationCandlesPlants = candlesPlantsResult[locationName];
         const locationProseccos = proseccosResult[locationName];
-        const locationPolaroid = polaroidResult[locationName]; // NEW
+        const locationBaubles = baubleResult[locationName];
+        const locationPolaroid = polaroidResult[locationName];
         
         // Add jars_luxe_data as separate line item if it exists
         if (locationJars && locationJars.jars_luxe_data) {
@@ -409,8 +516,16 @@ function combinePersonalizedData(jarsResult, candlesPlantsResult, proseccosResul
                 prosecco_data: locationProseccos.prosecco_data
             });
         }
-        
-        // Add polaroid_photo_data as separate line item if it exists (NEW)
+
+        // Add bauble_data as separate line item if it exists
+        if (locationBaubles && locationBaubles.bauble_data) {
+            combinedResult.push({
+                location: locationName,
+                bauble_data: locationBaubles.bauble_data
+            });
+        }
+
+        // Add polaroid_photo_data as separate line item if it exists
         if (locationPolaroid && locationPolaroid.polaroid_photo_data) {
             combinedResult.push({
                 location: locationName,

@@ -1,3 +1,5 @@
+const { getTemplateConfig } = require('../config');
+
 const query = `
 SELECT 
     so.shop_id,
@@ -253,10 +255,19 @@ function transformMessageCards(rawData, validLocations, finalBatchNumbers) {
         if (messages.length > 0) {
             console.log(`${locationName}: ${messages.length} message cards`);
 
+            // Get dynamic grouping number for message cards
+            const messageCardsConfig = getTemplateConfig(locationName, 'message_cards');
+            const groupingNumber = messageCardsConfig.groupingNumber || 12; // Default to 12 if not found
+
+            console.log(`\n  📋 Message Cards Template Configuration for ${locationName}:`);
+            console.log(`     Version: ${messageCardsConfig.version}`);
+            console.log(`     Grouping Number: ${groupingNumber}`);
+            console.log(`     Endpoint: ${messageCardsConfig.endpoint}`);
+
             const batches = [];
 
-            for (let i = 0; i < messages.length; i += 12) {
-                const batchMessages = messages.slice(i, i + 12);
+            for (let i = 0; i < messages.length; i += groupingNumber) {
+                const batchMessages = messages.slice(i, i + groupingNumber);
                 const batch = {};
 
                 batchMessages.forEach((messageCard, index) => {
@@ -265,6 +276,9 @@ function transformMessageCards(rawData, validLocations, finalBatchNumbers) {
 
                 batches.push(batch);
             }
+
+            console.log(`     🎯 DEBUG: Created ${batches.length} batches for ${locationName}`);
+            console.log(`     🎯 DEBUG: Sample batch structure:`, JSON.stringify(batches[0], null, 2).substring(0, 300));
 
             result[locationName] = {
                 message_cards_data: batches
@@ -295,6 +309,8 @@ function combinePackingAndMessage(packingSlipsResult, messageCardsResult, validL
         
         // Add message cards data as separate entry if exists
         if (locationMessages && locationMessages.message_cards_data) {
+            console.log(`🎯 DEBUG combinePackingAndMessage: Adding message_cards_data for ${locationName}`);
+            console.log(`   Number of message card batches: ${locationMessages.message_cards_data.length}`);
             combinedResult.push({
                 location: locationName,
                 message_cards_data: locationMessages.message_cards_data

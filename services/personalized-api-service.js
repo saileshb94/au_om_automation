@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { PERSONALIZED_API_CONFIG } = require('../config');
+const { PERSONALIZED_API_CONFIG, getTemplateConfig } = require('../config');
 
 class PersonalizedApiService {
   constructor() {
@@ -87,6 +87,11 @@ class PersonalizedApiService {
           // Send this entry to each determined API endpoint
           for (const endpointKey of targetEndpoints) {
             console.log(`\n📤 Sending entry ${index + 1} to ${endpointKey} API`);
+            if (endpointKey === 'message_cards') {
+              console.log(`🎯 DEBUG: About to call message_cards API!`);
+              console.log(`   Entry location: ${parsedEntry.location}`);
+              console.log(`   Message cards data present: ${parsedEntry.message_cards_data !== undefined}`);
+            }
             results.summary.totalProcessed++;
 
             try {
@@ -148,15 +153,32 @@ class PersonalizedApiService {
 
   async callPersonalizedApi(endpointKey, entryObject) {
     console.log(`\n🔄 Making API call for endpoint: ${endpointKey}`);
+    console.log(`🎯 DEBUG: callPersonalizedApi called with endpointKey='${endpointKey}'`);
 
-    const endpoint = this.config.endpoints[endpointKey];
+    // Get location from entry object
+    const location = entryObject.location;
 
-    if (!endpoint) {
-      console.error(`❌ Unknown endpoint: ${endpointKey}`);
-      throw new Error(`Unknown endpoint: ${endpointKey}`);
+    if (!location) {
+      console.error(`❌ No location found in entry object`);
+      throw new Error('No location found in entry object');
     }
 
-    console.log(`📡 Making API call to: ${endpoint.method} ${this.config.baseUrl}${endpoint.url}`);
+    // Get dynamic endpoint based on location and template type
+    const templateConfig = getTemplateConfig(location, endpointKey);
+    const endpointUrl = templateConfig.endpoint;
+
+    if (!endpointUrl) {
+      console.error(`❌ Unknown endpoint: ${endpointKey} for location: ${location}`);
+      throw new Error(`Unknown endpoint: ${endpointKey} for location: ${location}`);
+    }
+
+    console.log(`📡 Using template version '${templateConfig.version}' for ${location}`);
+    console.log(`📡 Making API call to: POST ${this.config.baseUrl}${endpointUrl}`);
+    if (endpointKey === 'message_cards') {
+      console.log(`🎯 DEBUG: MESSAGE CARDS API CALL STARTING`);
+      console.log(`   Full URL: ${this.config.baseUrl}${endpointUrl}`);
+      console.log(`   Location: ${location}`);
+    }
 
     let lastError;
 
@@ -165,8 +187,8 @@ class PersonalizedApiService {
 
       try {
         const response = await this.axiosInstance({
-          method: endpoint.method,
-          url: endpoint.url,
+          method: 'POST',
+          url: endpointUrl,
           data: entryObject  // Send entry object directly without wrapper
         });
 
@@ -226,12 +248,14 @@ class PersonalizedApiService {
 
   analyzeContentForRouting(entryObject) {
     console.log(`\n🔍 Analyzing entry content for routing...`);
+    console.log(`🎯 DEBUG: Entry keys:`, Object.keys(entryObject));
 
     const keywordMap = {
       'candles_plants_data': 'candles',
       'jars_luxe_data': 'jars_luxe',
       'jars_classic_large_data': 'jars_classic_large',
       'prosecco_data': 'prosecco',
+      'bauble_data': 'bauble',
       'packing_slips_data': 'packing_slips',
       'message_cards_data': 'message_cards',
     };
@@ -240,11 +264,16 @@ class PersonalizedApiService {
     const entryText = JSON.stringify(entryObject).toLowerCase();
 
     console.log(`📝 Entry text to analyze: ${entryText.substring(0, 200)}...`);
+    console.log(`🎯 DEBUG: Checking for message_cards_data...`);
+    console.log(`   - Direct property check: entryObject.message_cards_data exists = ${entryObject.message_cards_data !== undefined}`);
+    console.log(`   - String includes check: entryText.includes('message_cards_data') = ${entryText.includes('message_cards_data')}`);
 
     Object.entries(keywordMap).forEach(([keyword, endpoint]) => {
       if (entryText.includes(keyword)) {
         foundEndpoints.add(endpoint);
         console.log(`✅ Found keyword '${keyword}' → routing to ${endpoint} endpoint`);
+      } else {
+        console.log(`   ❌ Keyword '${keyword}' not found`);
       }
     });
 
@@ -317,7 +346,7 @@ class PersonalizedApiService {
       });
     } else {
       // Handle object format (individual data type entries)
-      const dataTypes = ['jars_luxe_data', 'jars_classic_large_data', 'prosecco_data', 'packing_slips_data', 'message_cards_data', 'candles_data'];
+      const dataTypes = ['jars_luxe_data', 'jars_classic_large_data', 'prosecco_data', 'bauble_data', 'packing_slips_data', 'message_cards_data', 'candles_data'];
 
       dataTypes.forEach(dataType => {
         if (data[dataType] && Array.isArray(data[dataType])) {
@@ -375,12 +404,9 @@ class PersonalizedApiService {
       issues.push('Missing base URL configuration');
     }
 
-    const requiredEndpoints = ['jars_luxe', 'jars_classic_large', 'prosecco', 'packing_slips', 'message_cards', 'candles'];
-    for (const endpoint of requiredEndpoints) {
-      if (!this.config.endpoints[endpoint]) {
-        issues.push(`Missing endpoint configuration: ${endpoint}`);
-      }
-    }
+    // Note: Endpoint validation removed - Personalized API uses location-specific endpoints
+    // retrieved via getTemplateConfig(location, templateType)
+    // Templates: jars_luxe, jars_classic_large, prosecco, packing_slips, message_cards, candles
 
     return {
       valid: issues.length === 0,

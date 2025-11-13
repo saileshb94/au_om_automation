@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { AUSPOST_LABELS_CONFIG } = require('../config');
+const { AUSPOST_LABELS_CONFIG, getAuspostLabelPreferences } = require('../config');
 
 class AuspostApiService {
   constructor(lvlyConfig, bloomerooConfig, devMode) {
@@ -487,17 +487,18 @@ class AuspostApiService {
    * Call AusPost Labels API to generate labels
    * @param {Array} shipmentItems - Array of {shipment_id, item_id} objects
    * @param {Object} credentials - AusPost credentials (authorization, accountNumber)
+   * @param {string} location - Location name for layout preferences
    * @returns {Promise<Object>} API response with label URLs
    */
-  async callLabelsAPI(shipmentItems, credentials) {
+  async callLabelsAPI(shipmentItems, credentials, location) {
     console.log(`\n📮 === CALLING AUSPOST LABELS API ===`);
     console.log(`Generating labels for ${shipmentItems.length} shipments`);
 
-    // Build the API payload
+    // Build the API payload with location-specific preferences
     const payload = {
       wait_for_label_url: AUSPOST_LABELS_CONFIG.wait_for_label_url,
       unlabelled_articles_only: AUSPOST_LABELS_CONFIG.unlabelled_articles_only,
-      preferences: AUSPOST_LABELS_CONFIG.preferences,
+      preferences: getAuspostLabelPreferences(location),
       shipments: shipmentItems.map(item => ({
         shipment_id: item.shipment_id,
         items: [{ item_id: item.item_id }]
@@ -602,8 +603,8 @@ class AuspostApiService {
       const sampleOrder = successfulOrders.find(o => o.location === location);
       const credentials = this.getCredentials(sampleOrder.shop_id, location);
 
-      // Call Labels API
-      const apiResult = await this.callLabelsAPI(items, credentials);
+      // Call Labels API with location for layout preferences
+      const apiResult = await this.callLabelsAPI(items, credentials, location);
 
       if (apiResult.success) {
         // Extract label URL from response

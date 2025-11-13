@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { GP_LABELS_API_CONFIG } = require('../config');
+const { GP_LABELS_API_CONFIG, getTemplateConfig } = require('../config');
 
 class GpLabelsApiService {
   constructor() {
@@ -105,14 +105,17 @@ class GpLabelsApiService {
   async callGpLabelsApi(batchData) {
     console.log(`\n🔄 Making GP Labels API call for ${batchData.location} batch ${batchData.batch}`);
 
-    const endpoint = this.config.endpoint;
+    // Get dynamic endpoint based on location
+    const templateConfig = getTemplateConfig(batchData.location, 'gp_labels');
+    const endpointUrl = templateConfig.endpoint;
 
-    if (!endpoint) {
-      console.error(`❌ No endpoint configuration found`);
-      throw new Error('No endpoint configuration found');
+    if (!endpointUrl) {
+      console.error(`❌ No endpoint configuration found for ${batchData.location}`);
+      throw new Error(`No endpoint configuration found for ${batchData.location}`);
     }
 
-    console.log(`📡 Making API call to: ${endpoint.method} ${this.config.baseUrl}${endpoint.url}`);
+    console.log(`📡 Using template version '${templateConfig.version}' for ${batchData.location}`);
+    console.log(`📡 Making API call to: POST ${this.config.baseUrl}${endpointUrl}`);
     console.log(`📊 Processing ${batchData.location} batch ${batchData.batch} with ${batchData.gp_labels_data?.[0] ? Object.keys(batchData.gp_labels_data[0]).length : 0} labels`);
 
     let lastError;
@@ -122,8 +125,8 @@ class GpLabelsApiService {
 
       try {
         const response = await this.axiosInstance({
-          method: endpoint.method,
-          url: endpoint.url,
+          method: 'POST',
+          url: endpointUrl,
           data: batchData  // Send batch data directly
         });
 
@@ -188,9 +191,8 @@ class GpLabelsApiService {
       issues.push('Missing base URL configuration');
     }
 
-    if (!this.config.endpoint) {
-      issues.push('Missing endpoint configuration');
-    }
+    // Note: Endpoint validation removed - GP Labels uses location-specific endpoints
+    // retrieved via getTemplateConfig(location, 'gp_labels')
 
     return {
       valid: issues.length === 0,

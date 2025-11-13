@@ -1028,6 +1028,21 @@ class OrderProcessingPipeline {
       const personalizedData = results['personalized_packingslip_notes'];
       console.log(`📋 Personalized data available: ${personalizedData ? 'YES' : 'NO'} (${personalizedData ? personalizedData.length : 0} entries)`);
 
+      // Debug: Check for message_cards_data in the combined result
+      if (personalizedData && personalizedData.length > 0) {
+        console.log(`🎯 DEBUG: Analyzing personalized_packingslip_notes for message_cards_data...`);
+        personalizedData.forEach((entry, idx) => {
+          try {
+            const parsed = typeof entry === 'string' ? JSON.parse(entry) : entry;
+            const hasMessageCards = parsed.message_cards_data !== undefined;
+            const hasPackingSlips = parsed.packing_slips_data !== undefined;
+            console.log(`   Entry ${idx}: location=${parsed.location}, has_message_cards=${hasMessageCards}, has_packing_slips=${hasPackingSlips}`);
+          } catch (e) {
+            console.log(`   Entry ${idx}: Failed to parse - ${e.message}`);
+          }
+        });
+      }
+
       if (!executePersonalizedApiCalls_flag) {
         console.log(`❌ Decision: SKIPPING Personalized API calls (dev_mode flag disabled)`);
         console.log(`=== END PERSONALIZED API DECISION ===\n`);
